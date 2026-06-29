@@ -1,0 +1,14 @@
+﻿{
+  "version": "1.0",
+  "event_id": "018f4f6a-7e1a-7b8b-9c00-000000000002",
+  "session_id": "018f4f6a-7e1a-7b8b-9c00-000000000000",
+  "source": "codex",
+  "workspace": "E:/code/project",
+  "event_type": "output.received",
+  "timestamp": "2026-06-29T12:00:01+08:00",
+  "payload": {
+    "stream": "stdout",
+    "bytes": 12,
+    "sample": "hello"
+  }
+}

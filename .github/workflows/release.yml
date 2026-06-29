@@ -1,0 +1,106 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-runtime:
+    name: runtime (${{ matrix.bundle }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bundle: agent-orb-linux-x64.tar.gz
+            archive: tar.gz
+            cli: agent_orb
+            daemon: agent_orbd
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle: agent-orb-windows-x64.zip
+            archive: zip
+            cli: agent_orb.exe
+            daemon: agent_orbd.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build runtime
+        run: cargo build --release --locked --target ${{ matrix.target }} -p agent-orb-cli -p agent-orb-daemon
+
+      - name: Package runtime (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "dist/agent-orb/bin"
+          cp "target/${{ matrix.target }}/release/${{ matrix.cli }}" "dist/agent-orb/bin/agent_orb"
+          cp "target/${{ matrix.target }}/release/${{ matrix.daemon }}" "dist/agent-orb/bin/agent_orbd"
+          chmod +x dist/agent-orb/bin/*
+          tar -C dist -czf "dist/${{ matrix.bundle }}" agent-orb
+          sha256sum "dist/${{ matrix.bundle }}" | awk '{print $1 "  ${{ matrix.bundle }}"}' > "dist/${{ matrix.bundle }}.sha256"
+
+      - name: Package runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/agent-orb/bin | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.cli }}" "dist/agent-orb/bin/agent_orb.exe"
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.daemon }}" "dist/agent-orb/bin/agent_orbd.exe"
+          Compress-Archive -Path "dist/agent-orb" -DestinationPath "dist/${{ matrix.bundle }}" -Force
+          $hash = (Get-FileHash "dist/${{ matrix.bundle }}" -Algorithm SHA256).Hash.ToLower()
+          "$hash  ${{ matrix.bundle }}" | Out-File -Encoding ascii "dist/${{ matrix.bundle }}.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.bundle }}
+          path: |
+            dist/${{ matrix.bundle }}
+            dist/${{ matrix.bundle }}.sha256
+
+  publish-release:
+    name: publish GitHub Release
+    needs: build-runtime
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Build checksums.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat release-assets/*.sha256 | sort -k2 > release-assets/checksums.txt
+          rm release-assets/*.sha256
+          cat release-assets/checksums.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || inputs.tag }}
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name || inputs.tag, '-') }}
+          files: release-assets/*

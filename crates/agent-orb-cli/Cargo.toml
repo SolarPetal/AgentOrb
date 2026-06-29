@@ -1,0 +1,19 @@
+[package]
+name = "agent-orb-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "agent_orb"
+path = "src/main.rs"
+
+[dependencies]
+agent-orb-core.workspace = true
+clap.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+time.workspace = true
+uuid.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

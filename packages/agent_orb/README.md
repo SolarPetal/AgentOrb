@@ -1,0 +1,59 @@
+# agent_orb npx bootstrapper
+
+Local development bootstrapper for Agent Orb. It is intended to become:
+
+```bash
+npx agent_orb
+```
+
+after the package is published to npm.
+
+## Local development
+
+From the repo root:
+
+```bash
+./scripts/release/smoke-npx-local.sh
+```
+
+For manual testing:
+
+```bash
+npm --prefix packages/agent_orb run package-runtime
+npx --yes ./packages/agent_orb setup --yes
+```
+
+If `packages/agent_orb/releases` contains a matching native bundle, setup installs that bundle directly with SHA256 verification. Otherwise it falls back to source build.
+
+## Windows local path
+
+```powershell
+cd C:\path\to\AgentOrb
+npx --yes .\packages\agent_orb
+```
+
+If no Windows bundle is present and Rust is not installed on Windows yet, setup will print:
+
+```powershell
+winget install --id Rustlang.Rustup -e
+```
+
+For the intended no-Rust Windows path, publish or place `agent-orb-windows-x64.zip` plus `checksums.txt` in the release endpoint/package releases directory.
+
+## Windows + WSL repo caveat
+
+Windows npm may fail with `ERR_INVALID_URL` when installing a local package directly from a UNC path like:
+
+```powershell
+\\wsl.localhost\Ubuntu\home\...\AgentOrb
+```
+
+For Windows-host testing, prefer either:
+
+1. run from a Windows-local clone, or
+2. use a packed tarball from a Windows-local directory:
+
+```powershell
+cd $env:TEMP\agent-orb-npx
+npx --yes .\agent_orb-0.1.0.tgz --help
+```

@@ -1,0 +1,32 @@
+{
+  "name": "agent_orb",
+  "version": "0.1.0",
+  "description": "Agent Orb local bootstrapper",
+  "type": "module",
+  "config": {
+    "github_repository": "SolarPetal/AgentOrb"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "agent_orb": "bin/agent_orb.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "package-runtime": "../../scripts/release/package-runtime.sh ../../dist/release-local",
+    "prepare": "npm run build",
+    "prepack": "npm run build",
+    "start": "node bin/agent_orb.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md"
+  ],
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.0.0"
+  }
+}

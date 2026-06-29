@@ -1,0 +1,33 @@
+﻿[install]
+method = "dev"
+version = "0.1.0"
+
+[adapters.codex]
+enabled = true
+binary = "codex"
+wrapper = "codex-orb"
+
+[adapters.claude]
+enabled = false
+binary = "claude"
+wrapper = "claude-orb"
+
+[daemon]
+host = "127.0.0.1"
+port = 17321
+auto_start = true
+
+[orb]
+position = "top-right"
+size = 36
+opacity = 0.88
+always_on_top = true
+
+[behavior]
+silent_threshold_seconds = 20
+stuck_threshold_seconds = 180
+completed_hold_seconds = 10
+
+[privacy]
+include_output_sample = false
+max_sample_chars = 512

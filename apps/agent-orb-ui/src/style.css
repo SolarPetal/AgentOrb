@@ -1,0 +1,263 @@
+:root {
+  color-scheme: dark;
+  --orb-core: #9ca3af;
+  --orb-ring: #9ca3af;
+  --orb-glow: rgba(156, 163, 175, 0.58);
+  --spin-duration: 1.4s;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  user-select: none;
+}
+
+.orb-shell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: default;
+  outline: none;
+  -webkit-app-region: drag;
+}
+
+.orb-shell:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.92);
+  outline-offset: 2px;
+}
+
+.orb {
+  position: relative;
+  display: block;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+}
+
+.orb__glow,
+.orb__ring,
+.orb__core {
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.orb__glow {
+  inset: 2px;
+  background: var(--orb-core);
+  filter: blur(8px);
+  opacity: 0.72;
+  box-shadow: 0 0 18px var(--orb-glow);
+}
+
+.orb__ring {
+  inset: 0;
+  border: 3px solid color-mix(in srgb, var(--orb-ring) 22%, transparent);
+  border-top-color: var(--orb-ring);
+  opacity: 0.98;
+}
+
+.orb__core {
+  inset: 8px;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.75), transparent 32%),
+    var(--orb-core);
+  box-shadow:
+    inset 0 -2px 6px rgba(0, 0, 0, 0.2),
+    0 0 12px var(--orb-glow);
+}
+
+.orb-popover {
+  position: fixed;
+  top: 42px;
+  right: 0;
+  min-width: 160px;
+  max-width: 260px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(17, 24, 39, 0.88);
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: pre-line;
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+  pointer-events: none;
+}
+
+.orb-shell:hover .orb-popover,
+.orb-shell:focus-visible .orb-popover {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.is-disconnected {
+  --orb-core: #6b7280;
+  --orb-ring: #9ca3af;
+  --orb-glow: rgba(107, 114, 128, 0.52);
+}
+
+.is-idle,
+.is-cancelled {
+  --orb-core: #9ca3af;
+  --orb-ring: #9ca3af;
+  --orb-glow: rgba(156, 163, 175, 0.42);
+}
+
+.is-starting,
+.is-active {
+  --orb-core: #3b82f6;
+  --orb-ring: #93c5fd;
+  --orb-glow: rgba(59, 130, 246, 0.72);
+  --spin-duration: 1.05s;
+}
+
+.is-silent {
+  --orb-core: #8b5cf6;
+  --orb-ring: #c4b5fd;
+  --orb-glow: rgba(139, 92, 246, 0.7);
+  --spin-duration: 2.4s;
+}
+
+.is-waiting-input {
+  --orb-core: #fbbf24;
+  --orb-ring: #fde68a;
+  --orb-glow: rgba(251, 191, 36, 0.78);
+}
+
+.is-completed {
+  --orb-core: #22c55e;
+  --orb-ring: #86efac;
+  --orb-glow: rgba(34, 197, 94, 0.72);
+}
+
+.is-failed {
+  --orb-core: #ef4444;
+  --orb-ring: #fecaca;
+  --orb-glow: rgba(239, 68, 68, 0.78);
+}
+
+.is-stuck {
+  --orb-core: #f97316;
+  --orb-ring: #fed7aa;
+  --orb-glow: rgba(249, 115, 22, 0.75);
+}
+
+.is-starting .orb__ring,
+.is-active .orb__ring,
+.is-silent .orb__ring {
+  animation: spin var(--spin-duration) linear infinite;
+}
+
+.is-waiting-input .orb {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.is-failed .orb,
+.is-stuck .orb {
+  animation: blink 0.72s ease-in-out infinite;
+}
+
+.is-completed .orb__glow {
+  animation: done-glow 1.8s ease-in-out infinite;
+}
+
+.is-disconnected .orb__glow {
+  animation: breathe 2.8s ease-in-out infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.92;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.42;
+  }
+}
+
+@keyframes done-glow {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.68;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb,
+  .orb__glow,
+  .orb__ring,
+  .orb-popover {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .orb__glow {
+    filter: none;
+    opacity: 0.45;
+  }
+
+  .orb-popover {
+    background: #111827;
+    border-color: rgba(255, 255, 255, 0.38);
+  }
+}

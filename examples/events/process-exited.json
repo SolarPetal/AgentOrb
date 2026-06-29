@@ -1,0 +1,13 @@
+﻿{
+  "version": "1.0",
+  "event_id": "018f4f6a-7e1a-7b8b-9c00-000000000003",
+  "session_id": "018f4f6a-7e1a-7b8b-9c00-000000000000",
+  "source": "codex",
+  "workspace": "E:/code/project",
+  "event_type": "process.exited",
+  "timestamp": "2026-06-29T12:00:05+08:00",
+  "payload": {
+    "exit_code": 0,
+    "duration_ms": 5000
+  }
+}
