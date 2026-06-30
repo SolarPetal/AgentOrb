@@ -12,6 +12,12 @@ Observe a target CLI with minimal disruption and send daemon events that drive t
 
 ## Choices and trade-offs
 
+### Small modules over one large CLI file
+
+The CLI crate is split by responsibility: entrypoint, runner, daemon client, HTTP, config/token, prompt detection, source detection, event helpers, shell formatting, and shared errors.
+
+Alternative: keep all code in `main.rs`. That was fast for MVP delivery, but it made quality checks noisy and raised the cost of changing prompt, timeout, or daemon behavior independently.
+
 ### Piped stdout/stderr with inherited stdin
 
 Chosen because it is portable and keeps MVP simple while preserving visible output.
@@ -39,3 +45,4 @@ Alternative: send all output and detect in daemon. Easier to debug, but violates
 ## Change history
 
 - 2026-06-30: Added config-backed daemon connection, idle/stuck timeout events, prompt detection, and loopback host guard.
+- 2026-06-30: Split the CLI implementation into focused modules without changing runtime behavior.

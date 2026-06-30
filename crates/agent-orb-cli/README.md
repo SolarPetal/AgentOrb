@@ -14,6 +14,21 @@ Users should run their normal CLI command while Agent Orb observes stdout, stder
 - Auto-start `agent_orbd` when possible.
 - Detect Codex / Claude / generic sources from command names.
 
+## Internal layout
+
+```text
+src/main.rs    # clap entrypoint only
+src/runner.rs  # process orchestration and stream forwarding
+src/daemon.rs  # daemon lifecycle and event client
+src/http.rs    # minimal local HTTP client
+src/config.rs  # config dir, token loading, loopback guard
+src/prompt.rs  # prompt heuristics and output sample truncation
+src/event.rs   # EventEnvelope helpers
+src/source.rs  # Codex / Claude / generic source detection
+src/shell.rs   # command payload formatting
+src/error.rs   # shared CLI error type
+```
+
 ## Dependencies
 
 - Upstream: `agent-orb-core`, `tokio`, `clap`, `uuid`, `time`.
