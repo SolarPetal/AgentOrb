@@ -97,3 +97,9 @@ cd apps/agent-orb-ui/src-tauri && cargo test
 cd packages/agent_orb && npm run check && npm run build
 AGENT_ORB_SMOKE_CONFIG_DIR="$(mktemp -d)" ./scripts/release/smoke-npx-local.sh
 ```
+
+If real Codex CLI or Claude Code CLI binaries are installed, run the adapter smoke too:
+
+```bash
+AGENT_ORB_SKIP_UI_BUILD=1 ./scripts/smoke-real-adapters.sh
+```

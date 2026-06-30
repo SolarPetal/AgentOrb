@@ -1,17 +1,23 @@
 import { spawn, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 export function commandExists(command) {
     return findCommand(command) !== undefined;
 }
 export function findCommand(command) {
-    const checker = process.platform === 'win32' ? 'where' : 'command';
-    const args = process.platform === 'win32' ? [command] : ['-v', command];
-    const result = process.platform === 'win32'
-        ? spawnSync(checker, args, { encoding: 'utf8' })
-        : spawnSync('sh', ['-lc', `${checker} ${quote(command)}`], { encoding: 'utf8' });
-    if (result.status !== 0)
-        return undefined;
-    const firstLine = (result.stdout ?? '').split(/\r?\n/).find((line) => line.trim().length > 0);
-    return firstLine?.trim();
+    const pathEnv = process.env.PATH ?? '';
+    const searchDirs = pathEnv.split(process.platform === 'win32' ? ';' : ':').filter(Boolean);
+    const candidates = process.platform === 'win32'
+        ? commandCandidates(command)
+        : [command];
+    for (const dir of searchDirs) {
+        for (const candidate of candidates) {
+            const fullPath = path.join(dir, candidate);
+            if (isExecutableFile(fullPath))
+                return fullPath;
+        }
+    }
+    return undefined;
 }
 export function run(command, args, options = {}) {
     const result = spawnSync(command, args, {
@@ -42,6 +48,33 @@ export function spawnDetached(command, args, cwd) {
     child.unref();
     return child.pid;
 }
-function quote(value) {
-    return `'${value.replace(/'/g, `'\\''`)}'`;
+function commandCandidates(command) {
+    if (path.extname(command))
+        return [command];
+    const pathExt = process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD';
+    return [
+        command,
+        ...pathExt
+            .split(';')
+            .filter(Boolean)
+            .map((extension) => `${command}${extension.toLowerCase()}`),
+        ...pathExt
+            .split(';')
+            .filter(Boolean)
+            .map((extension) => `${command}${extension.toUpperCase()}`),
+    ];
+}
+function isExecutableFile(filePath) {
+    try {
+        const stat = fs.statSync(filePath);
+        if (!stat.isFile())
+            return false;
+        if (process.platform === 'win32')
+            return true;
+        fs.accessSync(filePath, fs.constants.X_OK);
+        return true;
+    }
+    catch {
+        return false;
+    }
 }

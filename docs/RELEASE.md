@@ -46,3 +46,20 @@ If `github_repository` is empty and no override is supplied, setup will fall bac
 ```bash
 ./scripts/release/smoke-npx-local.sh
 ```
+
+## Real adapter smoke
+
+When Codex CLI or Claude Code CLI is available on `PATH`, verify the installed runtime and generated shims against the real binaries:
+
+```bash
+AGENT_ORB_SKIP_UI_BUILD=1 ./scripts/smoke-real-adapters.sh
+```
+
+The script installs into temporary isolated runtime/config directories, runs:
+
+- `agent_orb run -- codex --version`
+- `codex-orb --version`
+- `agent_orb run -- claude --version`
+- `claude-orb --version`
+
+Only adapters present on `PATH` are tested. Set `AGENT_ORB_REQUIRE_REAL_ADAPTERS=1` to fail when no real adapter is available.

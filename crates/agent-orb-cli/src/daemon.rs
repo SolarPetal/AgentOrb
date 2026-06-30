@@ -1,9 +1,14 @@
-use std::{env, path::PathBuf, process::Stdio, time::Duration};
+use std::{
+    env,
+    path::{Path, PathBuf},
+    process::Stdio,
+    time::Duration,
+};
 
 use agent_orb_core::{config::Config, event::EventEnvelope};
 use tokio::{process::Command, time::sleep};
 
-use crate::{error::AppError, http::http_request};
+use crate::{config::read_token, error::AppError, http::http_request};
 
 #[derive(Debug, Clone)]
 pub struct DaemonClient {
@@ -35,19 +40,41 @@ impl DaemonClient {
     }
 }
 
-pub async fn ensure_daemon_running(config: &Config) -> Result<(), AppError> {
-    if daemon_health(&config.daemon.host, config.daemon.port)
+pub async fn ensure_daemon_running(
+    config: &Config,
+    config_dir: impl AsRef<Path>,
+) -> Result<(), AppError> {
+    let config_dir = config_dir.as_ref();
+    if authenticated_status(&config.daemon.host, config.daemon.port, config_dir)
         .await
         .is_ok()
     {
         return Ok(());
     }
 
+    if daemon_health(&config.daemon.host, config.daemon.port)
+        .await
+        .is_ok()
+    {
+        return Err(AppError::DaemonTokenMismatch {
+            host: config.daemon.host.clone(),
+            port: config.daemon.port,
+            token_path: config_dir.join("token"),
+        });
+    }
+
+    if !config.daemon.auto_start {
+        return Err(AppError::DaemonAutoStartDisabled {
+            host: config.daemon.host.clone(),
+            port: config.daemon.port,
+        });
+    }
+
     start_daemon()?;
 
     for _ in 0..40 {
         sleep(Duration::from_millis(250)).await;
-        if daemon_health(&config.daemon.host, config.daemon.port)
+        if authenticated_status(&config.daemon.host, config.daemon.port, config_dir)
             .await
             .is_ok()
         {
@@ -93,6 +120,19 @@ fn find_daemon_binary() -> Option<PathBuf> {
 
 async fn daemon_health(host: &str, port: u16) -> Result<(), AppError> {
     let response = http_request(host, port, "GET", "/health", &[], Vec::new()).await?;
+
+    if response.status_code == 200 {
+        Ok(())
+    } else {
+        Err(AppError::HttpStatus(response.status_code))
+    }
+}
+
+async fn authenticated_status(host: &str, port: u16, config_dir: &Path) -> Result<(), AppError> {
+    let token = read_token(config_dir)?;
+    let auth = format!("Bearer {token}");
+    let headers = [("Authorization", auth.as_str())];
+    let response = http_request(host, port, "GET", "/v1/status", &headers, Vec::new()).await?;
 
     if response.status_code == 200 {
         Ok(())

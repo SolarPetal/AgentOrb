@@ -29,7 +29,7 @@ pub async fn run_wrapped_command(command: Vec<String>) -> Result<i32, AppError> 
     let config_dir = default_config_dir();
     let config = Config::load_from_dir_or_default(&config_dir);
     ensure_loopback_host(&config.daemon.host)?;
-    ensure_daemon_running(&config).await?;
+    ensure_daemon_running(&config, &config_dir).await?;
     let token = read_token(&config_dir)?;
     let client = DaemonClient::new(config.daemon.host.clone(), config.daemon.port, token);
 
