@@ -103,3 +103,10 @@ If real Codex CLI or Claude Code CLI binaries are installed, run the adapter smo
 ```bash
 AGENT_ORB_SKIP_UI_BUILD=1 ./scripts/smoke-real-adapters.sh
 ```
+
+On a Windows host, run the matching PowerShell smoke after installing the Windows runtime:
+
+```powershell
+.\scripts\windows\install-agent-orb.ps1 -CreateAdapterShims
+.\scripts\windows\smoke-real-adapters.ps1
+```

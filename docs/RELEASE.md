@@ -63,3 +63,12 @@ The script installs into temporary isolated runtime/config directories, runs:
 - `claude-orb --version`
 
 Only adapters present on `PATH` are tested. Set `AGENT_ORB_REQUIRE_REAL_ADAPTERS=1` to fail when no real adapter is available.
+
+On a Windows host, use the PowerShell equivalent after installing the Windows runtime:
+
+```powershell
+.\scripts\windows\install-agent-orb.ps1 -CreateAdapterShims
+.\scripts\windows\smoke-real-adapters.ps1
+```
+
+The Windows smoke also uses an isolated temporary config directory and random local daemon port by default.

@@ -17,6 +17,15 @@ codex-orb
 claude-orb
 ```
 
+Real Codex / Claude adapter smoke:
+
+```powershell
+.\scripts\windows\install-agent-orb.ps1 -CreateAdapterShims
+.\scripts\windows\smoke-real-adapters.ps1
+```
+
+The real adapter smoke uses a temporary Agent Orb config directory and a random local daemon port by default, so it will not overwrite `%APPDATA%\agent-orb`.
+
 Requirements:
 
 - Rust for Windows: <https://rustup.rs/>
