@@ -41,15 +41,33 @@ pub struct StatusSnapshot {
     pub message: String,
 }
 
-#[derive(Debug, Default)]
 pub struct SessionStore {
     sessions: HashMap<String, Session>,
     sequence: u64,
+    completed_hold_seconds: u64,
+}
+
+impl Default for SessionStore {
+    fn default() -> Self {
+        Self {
+            sessions: HashMap::new(),
+            sequence: 0,
+            completed_hold_seconds: 10,
+        }
+    }
 }
 
 impl SessionStore {
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_completed_hold_seconds(completed_hold_seconds: u64) -> Self {
+        Self {
+            completed_hold_seconds,
+            ..Self::default()
+        }
     }
 
     pub fn apply_event(&mut self, event: EventEnvelope) -> StatusSnapshot {
@@ -112,6 +130,10 @@ impl SessionStore {
         let Some(session) = self
             .sessions
             .values()
+            .filter(|session| {
+                session.status != InternalStatus::Completed
+                    || !completed_hold_elapsed(&session.updated_at, self.completed_hold_seconds)
+            })
             .max_by_key(|session| (status_priority(session.status), session.updated_seq))
         else {
             return StatusSnapshot::idle();
@@ -232,6 +254,14 @@ fn now_rfc3339() -> String {
     OffsetDateTime::now_utc()
         .format(&Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
+}
+
+fn completed_hold_elapsed(updated_at: &str, hold_seconds: u64) -> bool {
+    let Ok(updated_at) = OffsetDateTime::parse(updated_at, &Rfc3339) else {
+        return false;
+    };
+    let elapsed = OffsetDateTime::now_utc() - updated_at;
+    elapsed.is_positive() && elapsed.whole_seconds() >= hold_seconds as i64
 }
 
 #[cfg(test)]
@@ -383,5 +413,70 @@ mod tests {
         assert_eq!(store.global_status().status, InternalStatus::Failed);
         assert_eq!(store.clear_terminal_statuses(), 1);
         assert_eq!(store.global_status().status, InternalStatus::Idle);
+    }
+
+    #[test]
+    fn completed_status_expires_after_hold_window() {
+        let mut store = SessionStore::with_completed_hold_seconds(1);
+        let old_timestamp = (OffsetDateTime::now_utc() - time::Duration::seconds(2))
+            .format(&Rfc3339)
+            .expect("timestamp should format");
+
+        store.apply_event(event(
+            "s1",
+            Source::Codex,
+            EventType::SessionStarted,
+            &old_timestamp,
+        ));
+        store.apply_event(exit_event("s1", Source::Codex, 0, &old_timestamp));
+
+        assert_eq!(store.global_status().status, InternalStatus::Idle);
+    }
+
+    #[test]
+    fn completed_status_is_visible_during_hold_window() {
+        let mut store = SessionStore::with_completed_hold_seconds(10);
+        let timestamp = OffsetDateTime::now_utc()
+            .format(&Rfc3339)
+            .expect("timestamp should format");
+
+        store.apply_event(event(
+            "s1",
+            Source::Codex,
+            EventType::SessionStarted,
+            &timestamp,
+        ));
+        store.apply_event(exit_event("s1", Source::Codex, 0, &timestamp));
+
+        assert_eq!(store.global_status().status, InternalStatus::Completed);
+    }
+
+    #[test]
+    fn expired_completed_does_not_hide_lower_priority_live_status() {
+        let mut store = SessionStore::with_completed_hold_seconds(1);
+        let old_timestamp = (OffsetDateTime::now_utc() - time::Duration::seconds(2))
+            .format(&Rfc3339)
+            .expect("timestamp should format");
+        let new_timestamp = OffsetDateTime::now_utc()
+            .format(&Rfc3339)
+            .expect("timestamp should format");
+
+        store.apply_event(event(
+            "done",
+            Source::Codex,
+            EventType::SessionStarted,
+            &old_timestamp,
+        ));
+        store.apply_event(exit_event("done", Source::Codex, 0, &old_timestamp));
+        store.apply_event(event(
+            "starting",
+            Source::Claude,
+            EventType::SessionStarted,
+            &new_timestamp,
+        ));
+
+        let snapshot = store.global_status();
+        assert_eq!(snapshot.status, InternalStatus::Starting);
+        assert_eq!(snapshot.session_id.as_deref(), Some("starting"));
     }
 }

@@ -5,10 +5,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PACK_DIR="${PACK_DIR:-$(mktemp -d)}"
 BIN_DIR="${AGENT_ORB_SMOKE_BIN_DIR:-$(mktemp -d)}"
 CONFIG_DIR="${AGENT_ORB_SMOKE_CONFIG_DIR:-}"
+SMOKE_PORT="${AGENT_ORB_SMOKE_PORT:-$((23000 + RANDOM % 10000))}"
 
 cleanup() {
   if [[ -n "${DAEMON_PID:-}" ]]; then
     kill "$DAEMON_PID" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${CONFIG_DIR:-}" && -f "$CONFIG_DIR/daemon.pid" ]]; then
+    kill "$(cat "$CONFIG_DIR/daemon.pid")" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
@@ -33,9 +37,11 @@ echo "==> Install via npx-compatible npm exec"
 if [[ -n "$CONFIG_DIR" ]]; then
   AGENT_ORB_BIN_DIR="$BIN_DIR" \
   AGENT_ORB_CONFIG_DIR="$CONFIG_DIR" \
+  AGENT_ORB_DAEMON_PORT="$SMOKE_PORT" \
   npm exec --yes --package "$TARBALL" -- agent_orb setup --yes --no-smoke --release-dir "$RELEASE_DIR"
 else
   AGENT_ORB_BIN_DIR="$BIN_DIR" \
+  AGENT_ORB_DAEMON_PORT="$SMOKE_PORT" \
   npm exec --yes --package "$TARBALL" -- agent_orb setup --yes --no-smoke --release-dir "$RELEASE_DIR"
 fi
 
@@ -54,6 +60,25 @@ if [[ -n "$CONFIG_DIR" ]]; then
   AGENT_ORB_CONFIG_DIR="$CONFIG_DIR" "$BIN_DIR/agent_orb" run -- echo npx-smoke-ok
 else
   "$BIN_DIR/agent_orb" run -- echo npx-smoke-ok
+fi
+
+echo "==> Adapter wrapper smoke"
+FAKE_ADAPTER_DIR="$(mktemp -d)"
+cat > "$FAKE_ADAPTER_DIR/codex" <<'SH'
+#!/usr/bin/env sh
+echo fake-codex-ok
+SH
+cat > "$FAKE_ADAPTER_DIR/claude" <<'SH'
+#!/usr/bin/env sh
+echo "continue? yes/no"
+SH
+chmod +x "$FAKE_ADAPTER_DIR/codex" "$FAKE_ADAPTER_DIR/claude"
+if [[ -n "$CONFIG_DIR" ]]; then
+  PATH="$FAKE_ADAPTER_DIR:$PATH" AGENT_ORB_CONFIG_DIR="$CONFIG_DIR" "$BIN_DIR/agent_orb" run -- codex
+  PATH="$FAKE_ADAPTER_DIR:$PATH" AGENT_ORB_CONFIG_DIR="$CONFIG_DIR" "$BIN_DIR/agent_orb" run -- claude
+else
+  PATH="$FAKE_ADAPTER_DIR:$PATH" "$BIN_DIR/agent_orb" run -- codex
+  PATH="$FAKE_ADAPTER_DIR:$PATH" "$BIN_DIR/agent_orb" run -- claude
 fi
 
 echo "==> Installed files"

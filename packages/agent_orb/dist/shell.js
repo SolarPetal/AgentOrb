@@ -40,6 +40,7 @@ export function spawnDetached(command, args, cwd) {
         windowsHide: true,
     });
     child.unref();
+    return child.pid;
 }
 function quote(value) {
     return `'${value.replace(/'/g, `'\\''`)}'`;

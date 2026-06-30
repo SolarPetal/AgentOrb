@@ -32,3 +32,33 @@ export interface StatusSnapshot {
   updated_at?: string;
   message: string;
 }
+
+export interface UiConfig {
+  daemon: {
+    host: string;
+    port: number;
+  };
+  orb: {
+    position: string;
+    size: number;
+    opacity: number;
+    always_on_top: boolean;
+    click_through: boolean;
+  };
+  colors: {
+    disconnected: string;
+    idle: string;
+    starting: string;
+    active: string;
+    thinking_like: string;
+    waiting_input: string;
+    completed: string;
+    error: string;
+    warning: string;
+  };
+  behavior: {
+    silent_threshold_seconds: number;
+    stuck_threshold_seconds: number;
+    completed_hold_seconds: number;
+  };
+}

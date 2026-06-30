@@ -11,6 +11,7 @@ sha_file="$OUT_DIR/checksums.txt"
 package_linux_x64() {
   echo "==> Building linux/x64 runtime"
   cargo build --release -p agent-orb-cli -p agent-orb-daemon --manifest-path "$ROOT/Cargo.toml"
+  build_ui_runtime_if_enabled
 
   local staging
   staging="$(mktemp -d)"
@@ -26,6 +27,22 @@ package_linux_x64() {
   tar -C "$staging" -czf "$bundle" agent-orb
   rm -rf "$staging"
   add_checksum "$bundle"
+}
+
+build_ui_runtime_if_enabled() {
+  if [[ "${AGENT_ORB_SKIP_UI_BUILD:-0}" == "1" ]]; then
+    echo "· Skipping Tauri UI build because AGENT_ORB_SKIP_UI_BUILD=1" >&2
+    return 0
+  fi
+
+  if [[ ! -d "$ROOT/apps/agent-orb-ui/src-tauri" ]]; then
+    echo "· UI project not found; skipping agent-orb-ui runtime" >&2
+    return 0
+  fi
+
+  echo "==> Building Tauri UI runtime"
+  npm --prefix "$ROOT/apps/agent-orb-ui" run build
+  cargo build --release --manifest-path "$ROOT/apps/agent-orb-ui/src-tauri/Cargo.toml"
 }
 
 package_windows_x64_if_available() {

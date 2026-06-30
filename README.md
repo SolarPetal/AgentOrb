@@ -24,6 +24,17 @@ agent-orb/
 └── examples/
 ```
 
+## MVP status
+
+The first MVP version is implemented for local runtime observation:
+
+- `agent_orb run -- <command>` wraps arbitrary CLIs.
+- Codex / Claude adapter shims are supported through setup-generated `codex-orb` and `claude-orb` commands.
+- The wrapper emits process, output, prompt, idle, stuck, and exit events.
+- `agent_orbd` stores current local session state behind a bearer token.
+- The Tauri orb polls daemon status and renders configured colors, size, opacity, and animation.
+- The npm bootstrapper installs a portable runtime bundle or falls back to a local source build.
+
 ## Development quick start
 
 ```bash
@@ -32,10 +43,57 @@ cargo run -p agent-orb-cli -- run -- echo hello
 cargo run -p agent-orb-daemon
 ```
 
-## Planned user setup
+## User setup
 
 ```bash
 npx agent_orb
 ```
 
-The bootstrapper will let users choose Codex CLI, Claude Code CLI, or both.
+The bootstrapper detects Codex CLI and Claude Code CLI if installed, writes `config.toml`, installs native runtime binaries, starts the daemon, and creates optional adapter shims without replacing the original CLIs.
+
+After setup:
+
+```bash
+agent_orb run -- echo hello
+agent_orb run -- codex
+agent_orb run -- claude
+codex-orb   # if Codex CLI was detected during setup
+claude-orb  # if Claude Code CLI was detected during setup
+```
+
+## Configuration
+
+Agent Orb reads `config.toml` from the platform config directory:
+
+- Linux: `$XDG_CONFIG_HOME/agent-orb` or `~/.config/agent-orb`
+- macOS: `~/Library/Application Support/agent-orb`
+- Windows: `%APPDATA%\\agent-orb`
+
+Useful MVP settings:
+
+```toml
+[orb]
+position = "top-right"
+size = 36
+opacity = 0.88
+click_through = false
+
+[behavior]
+silent_threshold_seconds = 20
+stuck_threshold_seconds = 180
+completed_hold_seconds = 10
+
+[privacy]
+include_output_sample = false
+max_sample_chars = 512
+```
+
+## Verification
+
+```bash
+cargo test --workspace
+cd apps/agent-orb-ui && npm run build
+cd apps/agent-orb-ui/src-tauri && cargo test
+cd packages/agent_orb && npm run check && npm run build
+AGENT_ORB_SMOKE_CONFIG_DIR="$(mktemp -d)" ./scripts/release/smoke-npx-local.sh
+```

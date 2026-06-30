@@ -1,11 +1,14 @@
 use std::{
     env, fmt, fs, io,
+    net::IpAddr,
     path::{Path, PathBuf},
     process::Stdio,
+    sync::Arc,
     time::Duration,
 };
 
 use agent_orb_core::{
+    config::Config,
     event::{EventEnvelope, EventType},
     source::Source,
 };
@@ -16,13 +19,12 @@ use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::TcpStream,
     process::Command,
+    sync::watch,
     task::JoinError,
-    time::sleep,
+    time::{sleep, Instant},
 };
 use uuid::Uuid;
 
-const DAEMON_HOST: &str = "127.0.0.1";
-const DAEMON_PORT: u16 = 17321;
 const TOKEN_FILE_NAME: &str = "token";
 
 #[derive(Debug, Parser)]
@@ -73,9 +75,12 @@ async fn run_wrapped_command(command: Vec<String>) -> Result<i32, AppError> {
         return Err(AppError::EmptyCommand);
     }
 
-    ensure_daemon_running().await?;
-    let token = read_token(default_config_dir())?;
-    let client = DaemonClient::new(DAEMON_HOST, DAEMON_PORT, token);
+    let config_dir = default_config_dir();
+    let config = Config::load_from_dir_or_default(&config_dir);
+    ensure_loopback_host(&config.daemon.host)?;
+    ensure_daemon_running(&config).await?;
+    let token = read_token(&config_dir)?;
+    let client = DaemonClient::new(config.daemon.host.clone(), config.daemon.port, token);
 
     let source = detect_source(&command[0]);
     let workspace = env::current_dir()
@@ -109,6 +114,18 @@ async fn run_wrapped_command(command: Vec<String>) -> Result<i32, AppError> {
     );
     warn_if_event_failed(client.post_event(&started_event).await, "session.started");
 
+    let prompt_detector = Arc::new(PromptDetector::for_source(&source));
+    let (activity_tx, activity_rx) = watch::channel(Instant::now());
+    let timeout_task = tokio::spawn(monitor_timeouts(
+        client.clone(),
+        session_id.clone(),
+        source.clone(),
+        workspace.clone(),
+        config.behavior.silent_threshold_seconds,
+        config.behavior.stuck_threshold_seconds,
+        activity_rx,
+    ));
+
     let stdout_task = child.stdout.take().map(|stdout| {
         tokio::spawn(forward_stream(
             stdout,
@@ -118,6 +135,10 @@ async fn run_wrapped_command(command: Vec<String>) -> Result<i32, AppError> {
             session_id.clone(),
             source.clone(),
             workspace.clone(),
+            config.privacy.include_output_sample,
+            config.privacy.max_sample_chars,
+            prompt_detector.clone(),
+            activity_tx.clone(),
         ))
     });
 
@@ -130,6 +151,10 @@ async fn run_wrapped_command(command: Vec<String>) -> Result<i32, AppError> {
             session_id.clone(),
             source.clone(),
             workspace.clone(),
+            config.privacy.include_output_sample,
+            config.privacy.max_sample_chars,
+            prompt_detector.clone(),
+            activity_tx.clone(),
         ))
     });
 
@@ -141,6 +166,8 @@ async fn run_wrapped_command(command: Vec<String>) -> Result<i32, AppError> {
     if let Some(task) = stderr_task {
         join_stream_task(task).await?;
     }
+    drop(activity_tx);
+    timeout_task.await.map_err(AppError::Join)?;
 
     let exit_code = status.code().unwrap_or(1);
     let duration_ms = (OffsetDateTime::now_utc() - started_at).whole_milliseconds();
@@ -167,6 +194,10 @@ async fn forward_stream<R, W>(
     session_id: String,
     source: Source,
     workspace: String,
+    include_output_sample: bool,
+    max_sample_chars: usize,
+    prompt_detector: Arc<PromptDetector>,
+    activity_tx: watch::Sender<Instant>,
 ) -> Result<(), AppError>
 where
     R: AsyncRead + Unpin,
@@ -184,25 +215,107 @@ where
             .await
             .map_err(AppError::Io)?;
         writer.flush().await.map_err(AppError::Io)?;
+        let _ = activity_tx.send(Instant::now());
 
         let event_type = match stream_name {
             "stderr" => EventType::StderrReceived,
             _ => EventType::OutputReceived,
+        };
+        let observed_sample = truncate_output_sample(&buffer[..bytes_read], max_sample_chars);
+        let prompt = prompt_detector.detect(&observed_sample);
+        let event_sample = if include_output_sample {
+            Some(observed_sample.clone())
+        } else {
+            None
         };
         let event = build_event(
             &session_id,
             source.clone(),
             workspace.clone(),
             event_type,
-            json!({
+            json_without_nulls(json!({
                 "stream": stream_name,
                 "bytes": bytes_read,
-            }),
+                "sample": event_sample,
+            })),
         );
         warn_if_event_failed(client.post_event(&event).await, stream_name);
+
+        if let Some(prompt) = prompt {
+            let event = build_event(
+                &session_id,
+                source.clone(),
+                workspace.clone(),
+                EventType::PromptDetected,
+                json!({
+                    "stream": stream_name,
+                    "pattern": prompt,
+                }),
+            );
+            warn_if_event_failed(client.post_event(&event).await, "prompt.detected");
+        }
     }
 
     Ok(())
+}
+
+async fn monitor_timeouts(
+    client: DaemonClient,
+    session_id: String,
+    source: Source,
+    workspace: String,
+    silent_threshold_seconds: u64,
+    stuck_threshold_seconds: u64,
+    mut activity_rx: watch::Receiver<Instant>,
+) {
+    let silent_threshold = Duration::from_secs(silent_threshold_seconds.max(1));
+    let stuck_threshold = Duration::from_secs(stuck_threshold_seconds.max(silent_threshold_seconds.max(1) + 1));
+    let mut sent_silent = false;
+    let mut sent_stuck = false;
+
+    loop {
+        tokio::select! {
+            changed = activity_rx.changed() => {
+                if changed.is_err() {
+                    break;
+                }
+                sent_silent = false;
+                sent_stuck = false;
+            }
+            _ = sleep(Duration::from_millis(250)) => {
+                let elapsed = activity_rx.borrow().elapsed();
+                if !sent_silent && elapsed >= silent_threshold {
+                    let event = build_event(
+                        &session_id,
+                        source.clone(),
+                        workspace.clone(),
+                        EventType::IdleTimeout,
+                        json!({
+                            "idle_ms": elapsed.as_millis(),
+                            "threshold_ms": silent_threshold.as_millis(),
+                        }),
+                    );
+                    warn_if_event_failed(client.post_event(&event).await, "idle.timeout");
+                    sent_silent = true;
+                }
+
+                if !sent_stuck && elapsed >= stuck_threshold {
+                    let event = build_event(
+                        &session_id,
+                        source.clone(),
+                        workspace.clone(),
+                        EventType::StuckTimeout,
+                        json!({
+                            "idle_ms": elapsed.as_millis(),
+                            "threshold_ms": stuck_threshold.as_millis(),
+                        }),
+                    );
+                    warn_if_event_failed(client.post_event(&event).await, "stuck.timeout");
+                    sent_stuck = true;
+                }
+            }
+        }
+    }
 }
 
 async fn join_stream_task(
@@ -212,8 +325,8 @@ async fn join_stream_task(
     Ok(())
 }
 
-async fn ensure_daemon_running() -> Result<(), AppError> {
-    if daemon_health().await.is_ok() {
+async fn ensure_daemon_running(config: &Config) -> Result<(), AppError> {
+    if daemon_health(&config.daemon.host, config.daemon.port).await.is_ok() {
         return Ok(());
     }
 
@@ -221,7 +334,7 @@ async fn ensure_daemon_running() -> Result<(), AppError> {
 
     for _ in 0..40 {
         sleep(Duration::from_millis(250)).await;
-        if daemon_health().await.is_ok() {
+        if daemon_health(&config.daemon.host, config.daemon.port).await.is_ok() {
             return Ok(());
         }
     }
@@ -262,9 +375,9 @@ fn find_daemon_binary() -> Option<PathBuf> {
     Some(PathBuf::from(exe_name))
 }
 
-async fn daemon_health() -> Result<(), AppError> {
+async fn daemon_health(host: &str, port: u16) -> Result<(), AppError> {
     let response =
-        http_request(DAEMON_HOST, DAEMON_PORT, "GET", "/health", &[], Vec::new()).await?;
+        http_request(host, port, "GET", "/health", &[], Vec::new()).await?;
 
     if response.status_code == 200 {
         Ok(())
@@ -275,13 +388,13 @@ async fn daemon_health() -> Result<(), AppError> {
 
 #[derive(Debug, Clone)]
 struct DaemonClient {
-    host: &'static str,
+    host: String,
     port: u16,
     token: String,
 }
 
 impl DaemonClient {
-    fn new(host: &'static str, port: u16, token: String) -> Self {
+    fn new(host: String, port: u16, token: String) -> Self {
         Self { host, port, token }
     }
 
@@ -293,7 +406,7 @@ impl DaemonClient {
             ("Content-Type", "application/json"),
         ];
         let response =
-            http_request(self.host, self.port, "POST", "/v1/events", &headers, body).await?;
+            http_request(&self.host, self.port, "POST", "/v1/events", &headers, body).await?;
 
         if (200..300).contains(&response.status_code) {
             Ok(())
@@ -416,6 +529,71 @@ fn shell_join(command: &[String]) -> String {
         .join(" ")
 }
 
+fn ensure_loopback_host(host: &str) -> Result<(), AppError> {
+    let is_loopback = if host.eq_ignore_ascii_case("localhost") {
+        true
+    } else {
+        host.parse::<IpAddr>().is_ok_and(|addr| addr.is_loopback())
+    };
+
+    if is_loopback {
+        Ok(())
+    } else {
+        Err(AppError::UnsafeDaemonHost(host.to_string()))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PromptDetector {
+    patterns: Vec<&'static str>,
+}
+
+impl PromptDetector {
+    fn for_source(source: &Source) -> Self {
+        let mut patterns = vec![
+            "?",
+            "confirm",
+            "continue?",
+            "yes/no",
+            "approve",
+            "permission",
+            "press enter",
+        ];
+
+        match source {
+            Source::Codex => patterns.extend(["approval", "allow", "deny"]),
+            Source::Claude => patterns.extend(["do you want to proceed", "proceed?", "press enter"]),
+            Source::Generic => {}
+        }
+
+        Self { patterns }
+    }
+
+    fn detect(&self, text: &str) -> Option<&'static str> {
+        let lower = text.to_ascii_lowercase();
+        self.patterns
+            .iter()
+            .copied()
+            .find(|pattern| lower.contains(pattern))
+    }
+}
+
+fn truncate_output_sample(bytes: &[u8], max_sample_chars: usize) -> String {
+    let sample = String::from_utf8_lossy(bytes);
+    truncate_chars(sample.as_ref(), max_sample_chars)
+}
+
+fn truncate_chars(value: &str, max_chars: usize) -> String {
+    value.chars().take(max_chars).collect()
+}
+
+fn json_without_nulls(mut value: serde_json::Value) -> serde_json::Value {
+    if let serde_json::Value::Object(ref mut object) = value {
+        object.retain(|_, value| !value.is_null());
+    }
+    value
+}
+
 fn default_config_dir() -> PathBuf {
     if let Some(dir) = env::var_os("AGENT_ORB_CONFIG_DIR") {
         return PathBuf::from(dir);
@@ -490,6 +668,7 @@ enum AppError {
         command: String,
         source: io::Error,
     },
+    UnsafeDaemonHost(String),
 }
 
 impl fmt::Display for AppError {
@@ -497,7 +676,7 @@ impl fmt::Display for AppError {
         match self {
             Self::DaemonUnavailable => write!(
                 f,
-                "daemon is unavailable at {DAEMON_HOST}:{DAEMON_PORT}; start agent_orbd first or set AGENT_ORB_DAEMON"
+                "daemon is unavailable; start agent_orbd first or set AGENT_ORB_DAEMON"
             ),
             Self::DaemonBinaryNotFound => write!(
                 f,
@@ -518,6 +697,10 @@ impl fmt::Display for AppError {
             Self::Spawn { command, source } => {
                 write!(f, "failed to spawn target command `{command}`: {source}")
             }
+            Self::UnsafeDaemonHost(host) => write!(
+                f,
+                "refusing to send events to non-loopback daemon host `{host}`"
+            ),
         }
     }
 }
@@ -544,6 +727,33 @@ mod tests {
         ];
 
         assert_eq!(shell_join(&command), "codex -m \"gpt-5 codex\"");
+    }
+
+    #[test]
+    fn prompt_detector_finds_common_prompts() {
+        let detector = PromptDetector::for_source(&Source::Codex);
+
+        assert_eq!(
+            detector.detect("Approve this command? [yes/no]"),
+            Some("?")
+        );
+        assert_eq!(detector.detect("regular output"), None);
+    }
+
+    #[test]
+    fn daemon_host_must_be_loopback() {
+        assert!(ensure_loopback_host("127.0.0.1").is_ok());
+        assert!(ensure_loopback_host("localhost").is_ok());
+        assert!(ensure_loopback_host("0.0.0.0").is_err());
+        assert!(ensure_loopback_host("192.168.1.10").is_err());
+    }
+
+    #[test]
+    fn output_sample_is_bounded_and_prompt_detectable() {
+        let detector = PromptDetector::for_source(&Source::Generic);
+
+        assert_eq!(detector.detect(&truncate_output_sample(b"continue? yes/no", 512)), Some("?"));
+        assert_eq!(truncate_output_sample(b"abcdef", 3), "abc");
     }
 
     #[test]

@@ -2,6 +2,8 @@ use std::{fmt, fs, path::Path};
 
 use serde::{Deserialize, Serialize};
 
+pub const CONFIG_FILE_NAME: &str = "config.toml";
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
@@ -96,6 +98,10 @@ impl Config {
     pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
         let input = fs::read_to_string(path).map_err(ConfigError::Io)?;
         Self::from_toml_str(&input).map_err(ConfigError::Parse)
+    }
+
+    pub fn load_from_dir_or_default(config_dir: impl AsRef<Path>) -> Self {
+        Self::load_from_path(config_dir.as_ref().join(CONFIG_FILE_NAME)).unwrap_or_default()
     }
 }
 

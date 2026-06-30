@@ -4,7 +4,7 @@ import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { detectAdapters, type AdapterProfile } from './adapter.js';
-import { writeConfig } from './config.js';
+import { runtimeConfigFromEnv, writeConfig, type RuntimeConfig } from './config.js';
 import { installRuntimeBundle } from './download.js';
 import { detectPlatform, type PlatformInfo } from './platform.js';
 import { commandExists, run, spawnDetached } from './shell.js';
@@ -21,11 +21,12 @@ interface SetupOptions {
 
 export async function setup(options: SetupOptions = {}): Promise<void> {
   const platform = detectPlatform();
+  const runtime = runtimeConfigFromEnv();
   printHeader(platform);
   assertSupported(platform);
 
   if (options.doctorOnly) {
-    await doctor(platform);
+    await doctor(platform, runtime);
     return;
   }
 
@@ -51,10 +52,10 @@ export async function setup(options: SetupOptions = {}): Promise<void> {
     }
   }
 
-  const configPath = writeConfig(platform.configDir, selectedAdapters);
+  const configPath = writeConfig(platform.configDir, selectedAdapters, runtime);
   createAdapterShims(platform, selectedAdapters);
   ensurePathHint(platform);
-  await ensureDaemon(platform);
+  await ensureDaemon(platform, runtime);
 
   if (options.smoke ?? true) {
     smokeTest(platform);
@@ -63,6 +64,10 @@ export async function setup(options: SetupOptions = {}): Promise<void> {
   console.log('\n✓ Agent Orb setup complete');
   console.log(`Config: ${configPath}`);
   console.log(`Try:    ${runtimeExe(platform, 'agent_orb')} run -- ${platform.platform === 'windows' ? 'cmd /C echo hello' : 'echo hello'}`);
+  const orb = runtimeExe(platform, 'agent-orb-ui');
+  if (fs.existsSync(orb)) {
+    console.log(`Orb:    ${orb}`);
+  }
 }
 
 function installRuntimeFromSource(platform: PlatformInfo): void {
@@ -74,7 +79,7 @@ function installRuntimeFromSource(platform: PlatformInfo): void {
   installRuntime(repoRoot, platform);
 }
 
-export async function doctor(platform = detectPlatform()): Promise<void> {
+export async function doctor(platform = detectPlatform(), runtime = runtimeConfigFromEnv()): Promise<void> {
   printHeader(platform);
   assertSupported(platform);
   const binaries = ['agent_orb', 'agent_orbd'].map((name) => runtimeExe(platform, name));
@@ -82,7 +87,7 @@ export async function doctor(platform = detectPlatform()): Promise<void> {
     console.log(`${fs.existsSync(binary) ? '✓' : '✗'} ${binary}`);
   }
   console.log(`${fs.existsSync(path.join(platform.configDir, 'token')) ? '✓' : '·'} token: ${path.join(platform.configDir, 'token')}`);
-  console.log(`${await health() ? '✓' : '·'} daemon: http://127.0.0.1:17321/health`);
+  console.log(`${await health(runtime) ? '✓' : '·'} daemon: http://${runtime.daemonHost}:${runtime.daemonPort}/health`);
   printDetectedAdapters(detectAdapters());
 }
 
@@ -243,49 +248,53 @@ function ensurePathHint(platform: PlatformInfo): void {
   }
 }
 
-async function ensureDaemon(platform: PlatformInfo): Promise<void> {
+async function ensureDaemon(platform: PlatformInfo, runtime: RuntimeConfig): Promise<void> {
   console.log('\n==> Starting daemon');
   const tokenPath = path.join(platform.configDir, 'token');
-  if (fs.existsSync(tokenPath) && await authenticatedStatus(tokenPath)) {
-    console.log('✓ daemon already healthy at http://127.0.0.1:17321/health');
+  if (fs.existsSync(tokenPath) && await authenticatedStatus(tokenPath, runtime)) {
+    console.log(`✓ daemon already healthy at http://${runtime.daemonHost}:${runtime.daemonPort}/health`);
     return;
   }
 
   const daemon = runtimeExe(platform, 'agent_orbd');
-  const daemonAlreadyHealthy = await health();
+  const daemonAlreadyHealthy = await health(runtime);
   if (daemonAlreadyHealthy) {
     throw new Error(
-      `agent_orbd is already running on 127.0.0.1:17321, but it does not accept the token at ${tokenPath}. Stop the existing agent_orbd process and rerun setup.`,
+      `agent_orbd is already running on ${runtime.daemonHost}:${runtime.daemonPort}, but it does not accept the token at ${tokenPath}. Stop the existing agent_orbd process and rerun setup.`,
     );
   }
 
-  spawnDetached(daemon, []);
+  const pid = spawnDetached(daemon, []);
+  if (pid) {
+    fs.mkdirSync(platform.configDir, { recursive: true });
+    fs.writeFileSync(path.join(platform.configDir, 'daemon.pid'), `${pid}\n`, 'utf8');
+  }
 
   for (let i = 0; i < 40; i++) {
-    if (fs.existsSync(tokenPath) && await authenticatedStatus(tokenPath)) {
-      console.log('✓ daemon healthy at http://127.0.0.1:17321/health');
+    if (fs.existsSync(tokenPath) && await authenticatedStatus(tokenPath, runtime)) {
+      console.log(`✓ daemon healthy at http://${runtime.daemonHost}:${runtime.daemonPort}/health`);
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error('daemon did not become healthy on 127.0.0.1:17321');
+  throw new Error(`daemon did not become healthy on ${runtime.daemonHost}:${runtime.daemonPort}`);
 }
 
-async function health(): Promise<boolean> {
+async function health(runtime: RuntimeConfig): Promise<boolean> {
   try {
-    const response = await fetch('http://127.0.0.1:17321/health');
+    const response = await fetch(`http://${runtime.daemonHost}:${runtime.daemonPort}/health`);
     return response.ok;
   } catch {
     return false;
   }
 }
 
-async function authenticatedStatus(tokenPath: string): Promise<boolean> {
+async function authenticatedStatus(tokenPath: string, runtime: RuntimeConfig): Promise<boolean> {
   try {
     const token = fs.readFileSync(tokenPath, 'utf8').trim();
     if (!token) return false;
 
-    const response = await fetch('http://127.0.0.1:17321/v1/status', {
+    const response = await fetch(`http://${runtime.daemonHost}:${runtime.daemonPort}/v1/status`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },

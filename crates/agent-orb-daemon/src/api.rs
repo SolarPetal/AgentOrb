@@ -21,9 +21,16 @@ pub struct AppState {
 }
 
 impl AppState {
+    #[cfg(test)]
     pub fn new(token: String) -> Self {
+        Self::with_completed_hold_seconds(token, 10)
+    }
+
+    pub fn with_completed_hold_seconds(token: String, completed_hold_seconds: u64) -> Self {
         Self {
-            store: Arc::new(Mutex::new(SessionStore::new())),
+            store: Arc::new(Mutex::new(SessionStore::with_completed_hold_seconds(
+                completed_hold_seconds,
+            ))),
             token: Arc::new(token),
         }
     }

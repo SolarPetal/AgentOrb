@@ -42,12 +42,42 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/agent-orb-ui/package-lock.json
+
+      - name: Install Linux UI dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
 
       - name: Build runtime
         run: cargo build --release --locked --target ${{ matrix.target }} -p agent-orb-cli -p agent-orb-daemon
+
+      - name: Build UI frontend
+        shell: bash
+        run: npm ci --prefix apps/agent-orb-ui && npm --prefix apps/agent-orb-ui run build
+
+      - name: Build UI runtime (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: cargo build --release --locked --manifest-path apps/agent-orb-ui/src-tauri/Cargo.toml
+
+      - name: Build UI runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cargo build --release --locked --manifest-path apps/agent-orb-ui/src-tauri/Cargo.toml
 
       - name: Package runtime (Unix)
         if: runner.os != 'Windows'
@@ -57,6 +87,7 @@ jobs:
           mkdir -p "dist/agent-orb/bin"
           cp "target/${{ matrix.target }}/release/${{ matrix.cli }}" "dist/agent-orb/bin/agent_orb"
           cp "target/${{ matrix.target }}/release/${{ matrix.daemon }}" "dist/agent-orb/bin/agent_orbd"
+          cp "apps/agent-orb-ui/src-tauri/target/release/agent-orb-ui" "dist/agent-orb/bin/agent-orb-ui"
           chmod +x dist/agent-orb/bin/*
           tar -C dist -czf "dist/${{ matrix.bundle }}" agent-orb
           sha256sum "dist/${{ matrix.bundle }}" | awk '{print $1 "  ${{ matrix.bundle }}"}' > "dist/${{ matrix.bundle }}.sha256"
@@ -68,6 +99,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist/agent-orb/bin | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/${{ matrix.cli }}" "dist/agent-orb/bin/agent_orb.exe"
           Copy-Item "target/${{ matrix.target }}/release/${{ matrix.daemon }}" "dist/agent-orb/bin/agent_orbd.exe"
+          Copy-Item "apps/agent-orb-ui/src-tauri/target/release/agent-orb-ui.exe" "dist/agent-orb/bin/agent-orb-ui.exe"
           Compress-Archive -Path "dist/agent-orb" -DestinationPath "dist/${{ matrix.bundle }}" -Force
           $hash = (Get-FileHash "dist/${{ matrix.bundle }}" -Algorithm SHA256).Hash.ToLower()
           "$hash  ${{ matrix.bundle }}" | Out-File -Encoding ascii "dist/${{ matrix.bundle }}.sha256"

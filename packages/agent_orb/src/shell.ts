@@ -50,7 +50,7 @@ export function run(command: string, args: string[], options: RunOptions = {}): 
   };
 }
 
-export function spawnDetached(command: string, args: string[], cwd?: string): void {
+export function spawnDetached(command: string, args: string[], cwd?: string): number | undefined {
   const child = spawn(command, args, {
     cwd,
     detached: true,
@@ -58,6 +58,7 @@ export function spawnDetached(command: string, args: string[], cwd?: string): vo
     windowsHide: true,
   });
   child.unref();
+  return child.pid;
 }
 
 function quote(value: string): string {

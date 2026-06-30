@@ -5,8 +5,8 @@ use std::{env, fmt, fs, io, path::PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
-const DAEMON_HOST: &str = "127.0.0.1";
-const DAEMON_PORT: u16 = 17321;
+use agent_orb_core::config::Config;
+
 const TOKEN_FILE_NAME: &str = "token";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,10 +26,57 @@ struct StatusSnapshot {
     message: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UiConfig {
+    daemon: UiDaemonConfig,
+    orb: UiOrbConfig,
+    colors: UiColorConfig,
+    behavior: UiBehaviorConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UiDaemonConfig {
+    host: String,
+    port: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UiOrbConfig {
+    position: String,
+    size: u16,
+    opacity: f32,
+    always_on_top: bool,
+    click_through: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UiColorConfig {
+    disconnected: String,
+    idle: String,
+    starting: String,
+    active: String,
+    thinking_like: String,
+    waiting_input: String,
+    completed: String,
+    error: String,
+    warning: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UiBehaviorConfig {
+    silent_threshold_seconds: u64,
+    stuck_threshold_seconds: u64,
+    completed_hold_seconds: u64,
+}
+
 #[tauri::command]
 async fn get_status() -> Result<StatusSnapshot, String> {
-    let token = read_token().map_err(|err| err.to_string())?;
+    let config_dir = default_config_dir();
+    let config = Config::load_from_dir_or_default(&config_dir);
+    let token = read_token(&config_dir).map_err(|err| err.to_string())?;
     let response = http_request(
+        &config.daemon.host,
+        config.daemon.port,
         "GET",
         "/v1/status",
         &[("Authorization", format!("Bearer {token}"))],
@@ -47,8 +94,12 @@ async fn get_status() -> Result<StatusSnapshot, String> {
 
 #[tauri::command]
 async fn clear_status() -> Result<(), String> {
-    let token = read_token().map_err(|err| err.to_string())?;
+    let config_dir = default_config_dir();
+    let config = Config::load_from_dir_or_default(&config_dir);
+    let token = read_token(&config_dir).map_err(|err| err.to_string())?;
     let response = http_request(
+        &config.daemon.host,
+        config.daemon.port,
         "POST",
         "/v1/status/clear",
         &[("Authorization", format!("Bearer {token}"))],
@@ -64,15 +115,22 @@ async fn clear_status() -> Result<(), String> {
     }
 }
 
+#[tauri::command]
+fn get_config() -> UiConfig {
+    UiConfig::from(Config::load_from_dir_or_default(default_config_dir()))
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_always_on_top(true);
+                let config = Config::load_from_dir_or_default(default_config_dir());
+                let _ = window.set_always_on_top(config.orb.always_on_top);
+                let _ = window.set_ignore_cursor_events(config.orb.click_through);
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_status, clear_status])
+        .invoke_handler(tauri::generate_handler![get_status, clear_status, get_config])
         .run(tauri::generate_context!())
         .expect("error while running Agent Orb UI");
 }
@@ -84,6 +142,8 @@ struct HttpResponse {
 }
 
 async fn http_request(
+    host: &str,
+    port: u16,
     method: &str,
     path: &str,
     headers: &[(&str, String)],
@@ -92,9 +152,9 @@ async fn http_request(
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;
 
-    let mut stream = TcpStream::connect((DAEMON_HOST, DAEMON_PORT)).await?;
+    let mut stream = TcpStream::connect((host, port)).await?;
     let mut request = format!(
-        "{method} {path} HTTP/1.1\r\nHost: {DAEMON_HOST}:{DAEMON_PORT}\r\nContent-Length: {}\r\nConnection: close\r\n",
+        "{method} {path} HTTP/1.1\r\nHost: {host}:{port}\r\nContent-Length: {}\r\nConnection: close\r\n",
         body.len()
     );
     for (name, value) in headers {
@@ -136,8 +196,8 @@ fn parse_http_response(raw: &[u8]) -> Result<HttpResponse, UiError> {
     })
 }
 
-fn read_token() -> Result<String, UiError> {
-    let path = default_config_dir().join(TOKEN_FILE_NAME);
+fn read_token(config_dir: impl AsRef<std::path::Path>) -> Result<String, UiError> {
+    let path = config_dir.as_ref().join(TOKEN_FILE_NAME);
     let token = fs::read_to_string(&path)
         .map_err(|source| UiError::ReadToken { path, source })?
         .trim()
@@ -147,6 +207,40 @@ fn read_token() -> Result<String, UiError> {
         Err(UiError::EmptyToken)
     } else {
         Ok(token)
+    }
+}
+
+impl From<Config> for UiConfig {
+    fn from(config: Config) -> Self {
+        Self {
+            daemon: UiDaemonConfig {
+                host: config.daemon.host,
+                port: config.daemon.port,
+            },
+            orb: UiOrbConfig {
+                position: config.orb.position,
+                size: config.orb.size,
+                opacity: config.orb.opacity,
+                always_on_top: config.orb.always_on_top,
+                click_through: config.orb.click_through,
+            },
+            colors: UiColorConfig {
+                disconnected: config.colors.disconnected,
+                idle: config.colors.idle,
+                starting: config.colors.starting,
+                active: config.colors.active,
+                thinking_like: config.colors.thinking_like,
+                waiting_input: config.colors.waiting_input,
+                completed: config.colors.completed,
+                error: config.colors.error,
+                warning: config.colors.warning,
+            },
+            behavior: UiBehaviorConfig {
+                silent_threshold_seconds: config.behavior.silent_threshold_seconds,
+                stuck_threshold_seconds: config.behavior.stuck_threshold_seconds,
+                completed_hold_seconds: config.behavior.completed_hold_seconds,
+            },
+        }
     }
 }
 

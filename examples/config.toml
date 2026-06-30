@@ -22,11 +22,24 @@ position = "top-right"
 size = 36
 opacity = 0.88
 always_on_top = true
+click_through = false
+
+[colors]
+disconnected = "#6B7280"
+idle = "#9CA3AF"
+starting = "#60A5FA"
+active = "#3B82F6"
+thinking_like = "#8B5CF6"
+waiting_input = "#FBBF24"
+completed = "#22C55E"
+error = "#EF4444"
+warning = "#F97316"
 
 [behavior]
 silent_threshold_seconds = 20
 stuck_threshold_seconds = 180
 completed_hold_seconds = 10
+error_requires_click_to_clear = true
 
 [privacy]
 include_output_sample = false

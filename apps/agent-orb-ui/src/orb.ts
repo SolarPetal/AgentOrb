@@ -1,5 +1,5 @@
-import { clearStatus, getStatus } from './api';
-import type { StatusSnapshot, VisualStatus } from './types';
+import { clearStatus, getConfig, getStatus } from './api';
+import type { StatusSnapshot, UiConfig, VisualStatus } from './types';
 
 const POLL_INTERVAL_MS = 1000;
 
@@ -30,22 +30,31 @@ const statusText: Record<StatusSnapshot['status'], string> = {
 };
 
 export function mountOrb(root: HTMLElement): void {
-  root.innerHTML = `
-    <button class="orb-shell" type="button" aria-label="Agent Orb status">
-      <span class="orb" aria-hidden="true">
-        <span class="orb__glow"></span>
-        <span class="orb__ring"></span>
-        <span class="orb__core"></span>
-      </span>
-      <span class="orb-popover" role="status"></span>
-    </button>
-  `;
+  root.replaceChildren();
 
-  const shell = root.querySelector<HTMLButtonElement>('.orb-shell');
-  const popover = root.querySelector<HTMLElement>('.orb-popover');
-  if (!shell || !popover) {
-    throw new Error('Orb DOM failed to mount');
-  }
+  const shell = document.createElement('button');
+  shell.className = 'orb-shell';
+  shell.type = 'button';
+  shell.setAttribute('aria-label', 'Agent Orb status');
+
+  const orb = document.createElement('span');
+  orb.className = 'orb';
+  orb.setAttribute('aria-hidden', 'true');
+
+  const glow = document.createElement('span');
+  glow.className = 'orb__glow';
+  const ring = document.createElement('span');
+  ring.className = 'orb__ring';
+  const core = document.createElement('span');
+  core.className = 'orb__core';
+
+  const popover = document.createElement('span');
+  popover.className = 'orb-popover';
+  popover.setAttribute('role', 'status');
+
+  orb.append(glow, ring, core);
+  shell.append(orb, popover);
+  root.append(shell);
 
   let currentStatus: StatusSnapshot | null = null;
 
@@ -64,9 +73,35 @@ export function mountOrb(root: HTMLElement): void {
     popover.textContent = meta ? `${snapshot.message}\n${meta}` : snapshot.message;
   };
 
+  const applyConfig = (config: UiConfig) => {
+    const size = `${config.orb.size}px`;
+    const coreInset = `${Math.max(6, Math.round(config.orb.size * 0.22))}px`;
+    root.style.setProperty('--orb-size', size);
+    root.style.setProperty('--orb-core-inset', coreInset);
+    root.style.setProperty('--orb-opacity', String(config.orb.opacity));
+    root.style.setProperty('--color-disconnected', config.colors.disconnected);
+    root.style.setProperty('--color-idle', config.colors.idle);
+    root.style.setProperty('--color-starting', config.colors.starting);
+    root.style.setProperty('--color-active', config.colors.active);
+    root.style.setProperty('--color-silent', config.colors.thinking_like);
+    root.style.setProperty('--color-waiting-input', config.colors.waiting_input);
+    root.style.setProperty('--color-completed', config.colors.completed);
+    root.style.setProperty('--color-failed', config.colors.error);
+    root.style.setProperty('--color-stuck', config.colors.warning);
+    root.dataset.position = config.orb.position;
+  };
+
   const poll = async () => {
     const snapshot = await getStatus();
     render(snapshot);
+  };
+
+  const refreshConfig = async () => {
+    try {
+      applyConfig(await getConfig());
+    } catch (error) {
+      console.warn('failed to get Agent Orb config', error);
+    }
   };
 
   shell.addEventListener('click', async () => {
@@ -85,6 +120,8 @@ export function mountOrb(root: HTMLElement): void {
   });
 
   render({ status: 'disconnected', visual: 'disconnected', message: 'Connecting to daemon…' });
+  void refreshConfig();
   void poll();
   window.setInterval(() => void poll(), POLL_INTERVAL_MS);
+  window.setInterval(() => void refreshConfig(), 10_000);
 }
