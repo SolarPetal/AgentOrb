@@ -37,10 +37,10 @@ Or users can override at runtime:
 
 ```bash
 AGENT_ORB_GITHUB_REPOSITORY=OWNER/REPO npx @solar_orb/agent_orb
-AGENT_ORB_VERSION=v0.1.4 npx @solar_orb/agent_orb
+AGENT_ORB_VERSION=v0.1.5 npx @solar_orb/agent_orb
 ```
 
-By default, the bootstrapper downloads the GitHub Release tag matching its own npm package version, for example npm `0.1.4` downloads release `v0.1.4`. If `github_repository` is empty and no override is supplied, setup will fall back to local bundled assets or source build.
+By default, the bootstrapper downloads the GitHub Release tag matching its own npm package version, for example npm `0.1.5` downloads release `v0.1.5`. If `github_repository` is empty and no override is supplied, setup will fall back to local bundled assets or source build.
 
 ## Local smoke
 

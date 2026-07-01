@@ -21,7 +21,8 @@ export function commandExists(command: string): boolean {
 
 export function findCommand(command: string): string | undefined {
   const pathEnv = getPathEnv();
-  const searchDirs = pathEnv.split(process.platform === 'win32' ? ';' : ':').filter(Boolean);
+  const pathDirs = pathEnv.split(process.platform === 'win32' ? ';' : ':').filter(Boolean);
+  const searchDirs = uniquePaths([...pathDirs, ...extraCommandSearchDirs()]);
   const candidates = process.platform === 'win32'
     ? commandCandidates(command)
     : [command];
@@ -84,6 +85,45 @@ export function spawnDetached(command: string, args: string[], cwd?: string): nu
   });
   child.unref();
   return child.pid;
+}
+
+function uniquePaths(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const normalized = process.platform === 'win32' ? value.trim().toLowerCase() : value.trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(value);
+  }
+  return result;
+}
+
+
+function extraCommandSearchDirs(): string[] {
+  if (process.platform !== 'win32') return [];
+
+  const dirs = new Set<string>();
+  const add = (value: string | undefined) => {
+    if (value?.trim()) dirs.add(value.trim());
+  };
+
+  add(process.env.NVM_SYMLINK);
+  add(process.env.NVM_HOME);
+  add(process.env.APPDATA ? path.join(process.env.APPDATA, 'npm') : undefined);
+  add(process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'nodejs') : undefined);
+  add(path.dirname(process.execPath));
+  add('C:\\nvm4w\\nodejs');
+  add('C:\\Program Files\\nodejs');
+  add('C:\\Program Files (x86)\\nodejs');
+
+  return [...dirs].filter((dir) => {
+    try {
+      return fs.statSync(dir).isDirectory();
+    } catch {
+      return false;
+    }
+  });
 }
 
 function commandCandidates(command: string): string[] {

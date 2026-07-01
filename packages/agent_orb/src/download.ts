@@ -44,6 +44,7 @@ export async function installRuntimeBundle(platform: PlatformInfo, options: Bund
 
     cleanupInstalledRuntime(platform);
     extractBundle(bundlePath, tempDir, platform);
+    assertRuntimeInstalled(platform);
     writeInstallManifest(platform, {
       bundle: platform.bundleName,
       sha256: expected,
@@ -57,8 +58,23 @@ export async function installRuntimeBundle(platform: PlatformInfo, options: Bund
 }
 
 export function runtimeLooksInstalled(platform: PlatformInfo): boolean {
-  const required = ['agent_orb', 'agent_orbd'].map((name) => path.join(platform.runtimeDir, `${name}${platform.exeSuffix}`));
-  return required.every((file) => fs.existsSync(file));
+  return requiredRuntimeFiles(platform).every((file) => fs.existsSync(file));
+}
+
+function assertRuntimeInstalled(platform: PlatformInfo): void {
+  const missing = requiredRuntimeFiles(platform).filter((file) => !fs.existsSync(file));
+  if (missing.length === 0) return;
+
+  const installed = fs.existsSync(platform.runtimeDir)
+    ? fs.readdirSync(platform.runtimeDir).sort().join(', ')
+    : '<runtime dir missing>';
+  throw new Error(
+    `Runtime install incomplete; missing ${missing.join(', ')}. Installed files: ${installed}`,
+  );
+}
+
+function requiredRuntimeFiles(platform: PlatformInfo): string[] {
+  return ['agent_orb', 'agent_orbd'].map((name) => path.join(platform.runtimeDir, `${name}${platform.exeSuffix}`));
 }
 
 export function cleanupInstalledRuntime(platform: PlatformInfo): void {

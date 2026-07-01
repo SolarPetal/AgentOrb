@@ -200,10 +200,10 @@ function createAdapterShims(platform, adapters) {
         for (const command of commands) {
             const shimPath = path.join(platform.runtimeDir, command);
             if (platform.platform === 'windows') {
-                fs.writeFileSync(shimPath, windowsAdapterShim(adapter.name), 'ascii');
+                fs.writeFileSync(shimPath, windowsAdapterShim(adapter.name, adapter.foundBinary), 'ascii');
             }
             else {
-                fs.writeFileSync(shimPath, unixAdapterShim(adapter.name), 'utf8');
+                fs.writeFileSync(shimPath, unixAdapterShim(adapter.name, adapter.foundBinary), 'utf8');
                 fs.chmodSync(shimPath, 0o755);
             }
             console.log(`✓ ${shimPath}`);
@@ -213,11 +213,19 @@ function createAdapterShims(platform, adapters) {
 function uniqueStrings(values) {
     return [...new Set(values)];
 }
-function windowsAdapterShim(adapterName) {
-    return `@echo off\r\nsetlocal\r\nset "ORB_UI=%~dp0agent-orb-ui.exe"\r\nif exist "%ORB_UI%" (\r\n  tasklist /FI "IMAGENAME eq agent-orb-ui.exe" 2>NUL | find /I "agent-orb-ui.exe" >NUL\r\n  if errorlevel 1 start "" "%ORB_UI%"\r\n)\r\n"%~dp0agent_orb.exe" run -- ${adapterName} %*\r\nexit /b %ERRORLEVEL%\r\n`;
+function windowsAdapterShim(adapterName, adapterBinary) {
+    const adapterCommand = escapeWindowsCmdSetValue(adapterBinary ?? adapterName);
+    return `@echo off\r\nsetlocal\r\nset "AGENT_ORB_EXE=%~dp0agent_orb.exe"\r\nif not exist "%AGENT_ORB_EXE%" (\r\n  for %%I in (agent_orb.exe) do set "AGENT_ORB_EXE=%%~$PATH:I"\r\n)\r\nif not exist "%AGENT_ORB_EXE%" (\r\n  echo agent_orb runtime is missing: %~dp0agent_orb.exe 1>&2\r\n  echo Run: npx --yes @solar_orb/agent_orb upgrade --yes 1>&2\r\n  exit /b 1\r\n)\r\nset "ADAPTER_CMD=${adapterCommand}"\r\nset "ORB_UI=%~dp0agent-orb-ui.exe"\r\nif exist "%ORB_UI%" (\r\n  tasklist /FI "IMAGENAME eq agent-orb-ui.exe" 2>NUL | find /I "agent-orb-ui.exe" >NUL\r\n  if errorlevel 1 start "" "%ORB_UI%"\r\n)\r\n"%AGENT_ORB_EXE%" run -- "%ADAPTER_CMD%" %*\r\nexit /b %ERRORLEVEL%\r\n`;
 }
-function unixAdapterShim(adapterName) {
-    return `#!/usr/bin/env sh\nset -eu\nDIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nORB_UI="$DIR/agent-orb-ui"\nif [ -x "$ORB_UI" ] && { [ -n "\${DISPLAY:-}" ] || [ -n "\${WAYLAND_DISPLAY:-}" ]; }; then\n  running=0\n  if command -v pgrep >/dev/null 2>&1 && pgrep -x agent-orb-ui >/dev/null 2>&1; then\n    running=1\n  fi\n  if [ "$running" = "0" ]; then\n    "$ORB_UI" >/dev/null 2>&1 &\n  fi\nfi\nexec "$DIR/agent_orb" run -- ${adapterName} "$@"\n`;
+function unixAdapterShim(adapterName, adapterBinary) {
+    const adapterCommand = shellSingleQuote(adapterBinary ?? adapterName);
+    return `#!/usr/bin/env sh\nset -eu\nDIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nAGENT_ORB_EXE="$DIR/agent_orb"\nif [ ! -x "$AGENT_ORB_EXE" ]; then\n  AGENT_ORB_EXE=$(command -v agent_orb || true)\nfi\nif [ -z "$AGENT_ORB_EXE" ] || [ ! -x "$AGENT_ORB_EXE" ]; then\n  echo "agent_orb runtime is missing: $DIR/agent_orb" >&2\n  echo "Run: npx --yes @solar_orb/agent_orb upgrade --yes" >&2\n  exit 1\nfi\nADAPTER_CMD=${adapterCommand}\nORB_UI="$DIR/agent-orb-ui"\nif [ -x "$ORB_UI" ] && { [ -n "\${DISPLAY:-}" ] || [ -n "\${WAYLAND_DISPLAY:-}" ]; }; then\n  running=0\n  if command -v pgrep >/dev/null 2>&1 && pgrep -x agent-orb-ui >/dev/null 2>&1; then\n    running=1\n  fi\n  if [ "$running" = "0" ]; then\n    "$ORB_UI" >/dev/null 2>&1 &\n  fi\nfi\nexec "$AGENT_ORB_EXE" run -- "$ADAPTER_CMD" "$@"\n`;
+}
+function escapeWindowsCmdSetValue(value) {
+    return value.replace(/[\^&|<>()%!\"]/g, (char) => `^${char}`);
+}
+function shellSingleQuote(value) {
+    return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 function ensurePathConfigured(platform) {
     const currentPath = getPathEnv();
