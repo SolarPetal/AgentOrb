@@ -3,6 +3,7 @@ mod daemon;
 mod error;
 mod event;
 mod http;
+mod launcher;
 mod prompt;
 mod runner;
 mod shell;
@@ -10,7 +11,7 @@ mod source;
 
 use clap::{Parser, Subcommand};
 
-use crate::{error::AppError, runner::run_wrapped_command};
+use crate::{error::AppError, launcher::launch_adapter, runner::run_wrapped_command};
 
 #[derive(Debug, Parser)]
 #[command(name = "agent_orb", version, about = "Agent Orb CLI wrapper")]
@@ -26,6 +27,15 @@ enum Commands {
         /// Command and arguments after `--`.
         #[arg(last = true, required = true)]
         command: Vec<String>,
+    },
+    /// Start the desktop orb, run an adapter CLI, then stop session-local runtime processes.
+    Launch {
+        /// Adapter executable to run, for example `codex` or `claude`.
+        #[arg(long)]
+        adapter: String,
+        /// Arguments forwarded to the adapter after `--`.
+        #[arg(last = true)]
+        args: Vec<String>,
     },
 }
 
@@ -48,8 +58,11 @@ async fn run_main() -> Result<i32, AppError> {
     let cli = Cli::parse();
     match cli.command {
         Some(Commands::Run { command }) => run_wrapped_command(command).await,
+        Some(Commands::Launch { adapter, args }) => launch_adapter(adapter, args).await,
         None => {
-            println!("Agent Orb CLI. Try: agent_orb run -- echo hello");
+            println!(
+                "Agent Orb CLI. Try: agent_orb launch --adapter claude -- or agent_orb run -- echo hello"
+            );
             Ok(0)
         }
     }

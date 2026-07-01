@@ -56,7 +56,7 @@ function assertRuntimeInstalled(platform) {
     throw new Error(`Runtime install incomplete; missing ${missing.join(', ')}. Installed files: ${installed}`);
 }
 function requiredRuntimeFiles(platform) {
-    return ['agent_orb', 'agent_orbd'].map((name) => path.join(platform.runtimeDir, `${name}${platform.exeSuffix}`));
+    return ['agent_orb', 'agent_orbd', 'agent-orb-ui'].map((name) => path.join(platform.runtimeDir, `${name}${platform.exeSuffix}`));
 }
 export function cleanupInstalledRuntime(platform) {
     if (!fs.existsSync(platform.runtimeDir))
@@ -123,7 +123,7 @@ function releaseBaseUrl(platform, options) {
     const bundled = bundledReleaseBaseUrl(platform);
     if (bundled)
         return bundled;
-    const version = process.env.AGENT_ORB_VERSION ?? defaultReleaseVersion() ?? 'v0.1.0';
+    const version = process.env.AGENT_ORB_VERSION ?? defaultReleaseVersion() ?? 'v0.1.8';
     const repo = githubRepository();
     if (repo)
         return `https://github.com/${repo}/releases/download/${version}`;

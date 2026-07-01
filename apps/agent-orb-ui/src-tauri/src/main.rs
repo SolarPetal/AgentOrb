@@ -9,8 +9,8 @@ use agent_orb_core::config::Config;
 
 const TOKEN_FILE_NAME: &str = "token";
 const COMPACT_MIN_SIZE: f64 = 32.0;
-const PANEL_WIDTH: f64 = 320.0;
-const PANEL_HEIGHT: f64 = 220.0;
+const PANEL_WIDTH: f64 = 360.0;
+const PANEL_HEIGHT: f64 = 260.0;
 const PANEL_MARGIN: f64 = 12.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -6,7 +6,10 @@ use std::{
 };
 
 use agent_orb_core::{config::Config, event::EventEnvelope};
-use tokio::{process::Command, time::sleep};
+use tokio::{
+    process::{Child, Command},
+    time::sleep,
+};
 
 use crate::{config::read_token, error::AppError, http::http_request};
 
@@ -40,16 +43,32 @@ impl DaemonClient {
     }
 }
 
+#[derive(Debug)]
+pub struct DaemonLifecycle {
+    pub started_child: Option<Child>,
+}
+
 pub async fn ensure_daemon_running(
     config: &Config,
     config_dir: impl AsRef<Path>,
 ) -> Result<(), AppError> {
+    ensure_daemon_running_with_lifecycle(config, config_dir)
+        .await
+        .map(|_| ())
+}
+
+pub async fn ensure_daemon_running_with_lifecycle(
+    config: &Config,
+    config_dir: impl AsRef<Path>,
+) -> Result<DaemonLifecycle, AppError> {
     let config_dir = config_dir.as_ref();
     if authenticated_status(&config.daemon.host, config.daemon.port, config_dir)
         .await
         .is_ok()
     {
-        return Ok(());
+        return Ok(DaemonLifecycle {
+            started_child: None,
+        });
     }
 
     if daemon_health(&config.daemon.host, config.daemon.port)
@@ -70,7 +89,7 @@ pub async fn ensure_daemon_running(
         });
     }
 
-    start_daemon()?;
+    let mut child = start_daemon()?;
 
     for _ in 0..40 {
         sleep(Duration::from_millis(250)).await;
@@ -78,22 +97,26 @@ pub async fn ensure_daemon_running(
             .await
             .is_ok()
         {
-            return Ok(());
+            return Ok(DaemonLifecycle {
+                started_child: Some(child),
+            });
         }
     }
+
+    let _ = child.start_kill();
+    let _ = child.wait().await;
 
     Err(AppError::DaemonUnavailable)
 }
 
-fn start_daemon() -> Result<(), AppError> {
+fn start_daemon() -> Result<Child, AppError> {
     let daemon = find_daemon_binary().ok_or(AppError::DaemonBinaryNotFound)?;
     Command::new(daemon)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(AppError::Io)?;
-    Ok(())
+        .map_err(AppError::Io)
 }
 
 fn find_daemon_binary() -> Option<PathBuf> {

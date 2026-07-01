@@ -1,6 +1,6 @@
 ﻿[install]
 method = "dev"
-version = "0.1.0"
+version = "0.1.8"
 
 [adapters.codex]
 enabled = true
@@ -19,8 +19,8 @@ auto_start = true
 
 [orb]
 position = "top-right"
-size = 36
-opacity = 0.88
+size = 48
+opacity = 0.92
 always_on_top = true
 click_through = false
 
@@ -29,8 +29,8 @@ disconnected = "#6B7280"
 idle = "#9CA3AF"
 starting = "#60A5FA"
 active = "#3B82F6"
-thinking_like = "#8B5CF6"
-waiting_input = "#FBBF24"
+thinking_like = "#F97316"
+waiting_input = "#EF4444"
 completed = "#22C55E"
 error = "#EF4444"
 warning = "#F97316"

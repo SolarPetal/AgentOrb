@@ -46,6 +46,10 @@ export function mountOrb(root: HTMLElement): void {
 
   const glow = document.createElement('span');
   glow.className = 'orb__glow';
+  const haloOuter = document.createElement('span');
+  haloOuter.className = 'orb__halo orb__halo--outer';
+  const haloInner = document.createElement('span');
+  haloInner.className = 'orb__halo orb__halo--inner';
   const ring = document.createElement('span');
   ring.className = 'orb__ring';
   const core = document.createElement('span');
@@ -87,7 +91,7 @@ export function mountOrb(root: HTMLElement): void {
   clearButton.className = 'orb-panel__action';
   clearButton.textContent = 'Clear terminal status';
 
-  orb.append(glow, ring, core);
+  orb.append(glow, haloOuter, haloInner, ring, core);
   shell.append(orb, compactHint);
   panelHeader.append(panelTitle, closeButton);
   panel.append(panelHeader, statusBadge, message, meta, clearButton);

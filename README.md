@@ -1,4 +1,4 @@
-﻿# Agent Orb
+# Agent Orb
 
 Agent Orb is a lightweight AI CLI runtime observer for Codex CLI and Claude Code CLI.
 
@@ -49,13 +49,13 @@ cargo run -p agent-orb-daemon
 npx @solar_orb/agent_orb
 ```
 
-The bootstrapper detects Codex CLI and Claude Code CLI if installed, writes `config.toml`, installs native runtime binaries, starts the daemon and orb UI, adds the runtime bin directory to the user PATH on Windows, and creates adapter launchers without replacing the original CLIs.
+The bootstrapper detects Codex CLI and Claude Code CLI if installed, writes `config.toml`, installs native runtime binaries, adds the runtime bin directory to the user PATH on Windows, and creates adapter launchers without replacing the original CLIs. The launchers start a session-local daemon/orb UI on demand.
 
 After setup, open a new terminal and run one command:
 
 ```bash
-agent_orb-codex   # starts the orb UI if needed, then runs Codex through Agent Orb
-agent_orb-claude  # starts the orb UI if needed, then runs Claude Code through Agent Orb
+agent_orb-codex   # starts the orb UI + daemon, then runs Codex through Agent Orb
+agent_orb-claude  # starts the orb UI + daemon, then runs Claude Code through Agent Orb
 ```
 
 Lower-level commands remain available:
@@ -64,6 +64,7 @@ Lower-level commands remain available:
 agent_orb run -- echo hello
 agent_orb run -- codex
 agent_orb run -- claude
+agent_orb launch --adapter claude --
 codex-orb   # compatibility alias
 claude-orb  # compatibility alias
 ```
@@ -74,7 +75,7 @@ Upgrade or repair an existing installation:
 npx @solar_orb/agent_orb upgrade --yes
 ```
 
-`upgrade` verifies the new runtime bundle first, then stops the old local daemon/orb UI, removes old Agent Orb runtime files and shims, installs the new runtime, recreates launchers, and restarts the daemon/orb.
+`upgrade` verifies the new runtime bundle first, then stops the old local daemon/orb UI, removes old Agent Orb runtime files and shims, and recreates launchers. The next adapter launcher starts a fresh daemon/orb session and cleans it up on exit.
 
 ## Configuration
 
@@ -89,8 +90,8 @@ Useful MVP settings:
 ```toml
 [orb]
 position = "top-right"
-size = 36
-opacity = 0.88
+size = 48
+opacity = 0.92
 click_through = false
 
 [behavior]

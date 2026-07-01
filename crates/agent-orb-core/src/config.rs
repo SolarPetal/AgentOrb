@@ -203,7 +203,7 @@ mod defaults {
     }
 
     pub const fn orb_size() -> u16 {
-        36
+        48
     }
 
     pub const fn orb_opacity() -> f32 {
@@ -235,11 +235,11 @@ mod defaults {
     }
 
     pub fn color_thinking_like() -> String {
-        "#8B5CF6".to_string()
+        "#F97316".to_string()
     }
 
     pub fn color_waiting_input() -> String {
-        "#FBBF24".to_string()
+        "#EF4444".to_string()
     }
 
     pub fn color_completed() -> String {
@@ -291,12 +291,12 @@ mod tests {
         assert_eq!(config.daemon.port, 17321);
         assert!(config.daemon.auto_start);
         assert_eq!(config.orb.position, "top-right");
-        assert_eq!(config.orb.size, 36);
+        assert_eq!(config.orb.size, 48);
         assert_eq!(config.orb.opacity, 0.88);
         assert!(config.orb.always_on_top);
         assert!(!config.orb.click_through);
         assert_eq!(config.colors.active, "#3B82F6");
-        assert_eq!(config.colors.thinking_like, "#8B5CF6");
+        assert_eq!(config.colors.thinking_like, "#F97316");
         assert_eq!(config.behavior.silent_threshold_seconds, 20);
         assert_eq!(config.behavior.stuck_threshold_seconds, 180);
         assert_eq!(config.behavior.completed_hold_seconds, 10);

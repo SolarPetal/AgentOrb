@@ -7,7 +7,7 @@ import { detectAdapters, type AdapterProfile } from './adapter.js';
 import { runtimeConfigFromEnv, writeConfig, type RuntimeConfig } from './config.js';
 import { cleanupInstalledRuntime, installRuntimeBundle } from './download.js';
 import { detectPlatform, type PlatformInfo } from './platform.js';
-import { commandExists, getPathEnv, run, setPathEnv, spawnDetached } from './shell.js';
+import { commandExists, getPathEnv, run, setPathEnv } from './shell.js';
 
 interface SetupOptions {
   yes?: boolean;
@@ -55,8 +55,6 @@ export async function setup(options: SetupOptions = {}): Promise<void> {
   const configPath = writeConfig(platform.configDir, selectedAdapters, runtime);
   createAdapterShims(platform, selectedAdapters);
   ensurePathConfigured(platform);
-  await ensureDaemon(platform, runtime);
-  const orbStarted = startOrbUiIfAvailable(platform);
 
   if (options.smoke ?? true) {
     smokeTest(platform);
@@ -64,16 +62,18 @@ export async function setup(options: SetupOptions = {}): Promise<void> {
 
   console.log('\n✓ Agent Orb setup complete');
   console.log(`Config: ${configPath}`);
-  console.log(`Try:    agent_orb run -- ${platform.platform === 'windows' ? 'cmd /C echo hello' : 'echo hello'}`);
   if (selectedAdapters.some((adapter) => adapter.name === 'codex')) {
     console.log('Codex:  agent_orb-codex');
   }
   if (selectedAdapters.some((adapter) => adapter.name === 'claude')) {
     console.log('Claude: agent_orb-claude');
   }
+  if (!selectedAdapters.length) {
+    console.log(`Try:    agent_orb run -- ${platform.platform === 'windows' ? 'cmd /C echo hello' : 'echo hello'}`);
+  }
   const orb = runtimeExe(platform, 'agent-orb-ui');
   if (fs.existsSync(orb)) {
-    console.log(`Orb:    ${orbStarted ? 'started' : orb}`);
+    console.log('Orb:    starts automatically with the adapter launcher');
   }
 }
 
@@ -90,7 +90,7 @@ function installRuntimeFromSource(platform: PlatformInfo): void {
 export async function doctor(platform = detectPlatform(), runtime = runtimeConfigFromEnv()): Promise<void> {
   printHeader(platform);
   assertSupported(platform);
-  const binaries = ['agent_orb', 'agent_orbd'].map((name) => runtimeExe(platform, name));
+  const binaries = ['agent_orb', 'agent_orbd', 'agent-orb-ui'].map((name) => runtimeExe(platform, name));
   for (const binary of binaries) {
     console.log(`${fs.existsSync(binary) ? '✓' : '✗'} ${binary}`);
   }
@@ -126,6 +126,19 @@ function buildRuntime(repoRoot: string): void {
     cwd: repoRoot,
     stdio: 'inherit',
   });
+
+  const uiRoot = path.join(repoRoot, 'apps', 'agent-orb-ui');
+  const uiCargo = path.join(uiRoot, 'src-tauri', 'Cargo.toml');
+  if (fs.existsSync(uiCargo)) {
+    run('npm', ['--prefix', uiRoot, 'run', 'build'], {
+      cwd: repoRoot,
+      stdio: 'inherit',
+    });
+    run('cargo', ['build', '--release', '--manifest-path', uiCargo], {
+      cwd: repoRoot,
+      stdio: 'inherit',
+    });
+  }
 }
 
 function installRuntime(repoRoot: string, platform: PlatformInfo): void {
@@ -139,7 +152,7 @@ function installRuntime(repoRoot: string, platform: PlatformInfo): void {
     fs.copyFileSync(uiBinary, path.join(platform.runtimeDir, `agent-orb-ui${platform.exeSuffix}`));
     console.log(`✓ installed agent-orb-ui${platform.exeSuffix}`);
   } else {
-    console.log('· UI binary not found, skipping UI install for now');
+    throw new Error(`Build output not found: ${uiBinary}`);
   }
 }
 
@@ -250,12 +263,12 @@ function uniqueStrings(values: string[]): string[] {
 
 function windowsAdapterShim(adapterName: AdapterProfile['name'], adapterBinary?: string): string {
   const adapterCommand = escapeWindowsCmdSetValue(adapterBinary ?? adapterName);
-  return `@echo off\r\nsetlocal\r\nset "AGENT_ORB_EXE=%~dp0agent_orb.exe"\r\nif not exist "%AGENT_ORB_EXE%" (\r\n  for %%I in (agent_orb.exe) do set "AGENT_ORB_EXE=%%~$PATH:I"\r\n)\r\nif not exist "%AGENT_ORB_EXE%" (\r\n  echo agent_orb runtime is missing: %~dp0agent_orb.exe 1>&2\r\n  echo Run: npx --yes @solar_orb/agent_orb upgrade --yes 1>&2\r\n  exit /b 1\r\n)\r\nset "ADAPTER_CMD=${adapterCommand}"\r\nset "ORB_UI=%~dp0agent-orb-ui.exe"\r\nif exist "%ORB_UI%" (\r\n  tasklist /FI "IMAGENAME eq agent-orb-ui.exe" 2>NUL | find /I "agent-orb-ui.exe" >NUL\r\n  if errorlevel 1 start "" "%ORB_UI%"\r\n)\r\n"%AGENT_ORB_EXE%" run -- "%ADAPTER_CMD%" %*\r\nset "AGENT_ORB_EXIT=%ERRORLEVEL%"\r\ntaskkill /F /T /IM agent-orb-ui.exe >NUL 2>NUL\r\ntaskkill /F /T /IM agent_orbd.exe >NUL 2>NUL\r\nexit /b %AGENT_ORB_EXIT%\r\n`;
+  return `@echo off\r\nsetlocal\r\nset "AGENT_ORB_EXE=%~dp0agent_orb.exe"\r\nif not exist "%AGENT_ORB_EXE%" (\r\n  for %%I in (agent_orb.exe) do set "AGENT_ORB_EXE=%%~$PATH:I"\r\n)\r\nif not exist "%AGENT_ORB_EXE%" (\r\n  echo agent_orb runtime is missing: %~dp0agent_orb.exe 1>&2\r\n  echo Run: npx --yes @solar_orb/agent_orb upgrade --yes 1>&2\r\n  exit /b 1\r\n)\r\nset "ADAPTER_CMD=${adapterCommand}"\r\n"%AGENT_ORB_EXE%" launch --adapter "%ADAPTER_CMD%" -- %*\r\nexit /b %ERRORLEVEL%\r\n`;
 }
 
 function unixAdapterShim(adapterName: AdapterProfile['name'], adapterBinary?: string): string {
   const adapterCommand = shellSingleQuote(adapterBinary ?? adapterName);
-  return `#!/usr/bin/env sh\nset -eu\nDIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nAGENT_ORB_EXE="$DIR/agent_orb"\nif [ ! -x "$AGENT_ORB_EXE" ]; then\n  AGENT_ORB_EXE=$(command -v agent_orb || true)\nfi\nif [ -z "$AGENT_ORB_EXE" ] || [ ! -x "$AGENT_ORB_EXE" ]; then\n  echo "agent_orb runtime is missing: $DIR/agent_orb" >&2\n  echo "Run: npx --yes @solar_orb/agent_orb upgrade --yes" >&2\n  exit 1\nfi\nADAPTER_CMD=${adapterCommand}\nORB_UI="$DIR/agent-orb-ui"\nif [ -x "$ORB_UI" ] && { [ -n "\${DISPLAY:-}" ] || [ -n "\${WAYLAND_DISPLAY:-}" ]; }; then\n  running=0\n  if command -v pgrep >/dev/null 2>&1 && pgrep -x agent-orb-ui >/dev/null 2>&1; then\n    running=1\n  fi\n  if [ "$running" = "0" ]; then\n    "$ORB_UI" >/dev/null 2>&1 &\n  fi\nfi\nset +e\n"$AGENT_ORB_EXE" run -- "$ADAPTER_CMD" "$@"\nstatus=$?\nset -e\nif command -v pkill >/dev/null 2>&1; then\n  pkill -x agent-orb-ui >/dev/null 2>&1 || true\n  pkill -x agent_orbd >/dev/null 2>&1 || true\nfi\nexit "$status"\n`;
+  return `#!/usr/bin/env sh\nset -eu\nDIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nAGENT_ORB_EXE="$DIR/agent_orb"\nif [ ! -x "$AGENT_ORB_EXE" ]; then\n  AGENT_ORB_EXE=$(command -v agent_orb || true)\nfi\nif [ -z "$AGENT_ORB_EXE" ] || [ ! -x "$AGENT_ORB_EXE" ]; then\n  echo "agent_orb runtime is missing: $DIR/agent_orb" >&2\n  echo "Run: npx --yes @solar_orb/agent_orb upgrade --yes" >&2\n  exit 1\nfi\nADAPTER_CMD=${adapterCommand}\nexec "$AGENT_ORB_EXE" launch --adapter "$ADAPTER_CMD" -- "$@"\n`;
 }
 
 function escapeWindowsCmdSetValue(value: string): string {
@@ -328,96 +341,9 @@ function addWindowsUserPath(targetDir: string): boolean {
   }
 }
 
-function startOrbUiIfAvailable(platform: PlatformInfo): boolean {
-  const orb = runtimeExe(platform, 'agent-orb-ui');
-  if (!fs.existsSync(orb)) return false;
-
-  if (platform.platform === 'windows') {
-    if (isWindowsProcessRunning('agent-orb-ui.exe')) return true;
-    spawnDetached(orb, []);
-    return true;
-  }
-
-  if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) return false;
-  if (isUnixProcessRunning('agent-orb-ui')) return true;
-  spawnDetached(orb, []);
-  return true;
-}
-
-function isWindowsProcessRunning(imageName: string): boolean {
-  try {
-    const result = run('tasklist', ['/FI', `IMAGENAME eq ${imageName}`], {
-      allowFailure: true,
-    });
-    return result.stdout.toLowerCase().includes(imageName.toLowerCase());
-  } catch {
-    return false;
-  }
-}
-
-function isUnixProcessRunning(processName: string): boolean {
-  if (!commandExists('pgrep')) return false;
-  try {
-    const result = run('pgrep', ['-x', processName], {
-      allowFailure: true,
-    });
-    return result.status === 0;
-  } catch {
-    return false;
-  }
-}
-
-async function ensureDaemon(platform: PlatformInfo, runtime: RuntimeConfig): Promise<void> {
-  console.log('\n==> Starting daemon');
-  const tokenPath = path.join(platform.configDir, 'token');
-  if (fs.existsSync(tokenPath) && await authenticatedStatus(tokenPath, runtime)) {
-    console.log(`✓ daemon already healthy at http://${runtime.daemonHost}:${runtime.daemonPort}/health`);
-    return;
-  }
-
-  const daemon = runtimeExe(platform, 'agent_orbd');
-  const daemonAlreadyHealthy = await health(runtime);
-  if (daemonAlreadyHealthy) {
-    throw new Error(
-      `agent_orbd is already running on ${runtime.daemonHost}:${runtime.daemonPort}, but it does not accept the token at ${tokenPath}. Stop the existing agent_orbd process and rerun setup.`,
-    );
-  }
-
-  const pid = spawnDetached(daemon, []);
-  if (pid) {
-    fs.mkdirSync(platform.configDir, { recursive: true });
-    fs.writeFileSync(path.join(platform.configDir, 'daemon.pid'), `${pid}\n`, 'utf8');
-  }
-
-  for (let i = 0; i < 40; i++) {
-    if (fs.existsSync(tokenPath) && await authenticatedStatus(tokenPath, runtime)) {
-      console.log(`✓ daemon healthy at http://${runtime.daemonHost}:${runtime.daemonPort}/health`);
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(`daemon did not become healthy on ${runtime.daemonHost}:${runtime.daemonPort}`);
-}
-
 async function health(runtime: RuntimeConfig): Promise<boolean> {
   try {
     const response = await fetch(`http://${runtime.daemonHost}:${runtime.daemonPort}/health`);
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
-async function authenticatedStatus(tokenPath: string, runtime: RuntimeConfig): Promise<boolean> {
-  try {
-    const token = fs.readFileSync(tokenPath, 'utf8').trim();
-    if (!token) return false;
-
-    const response = await fetch(`http://${runtime.daemonHost}:${runtime.daemonPort}/v1/status`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
     return response.ok;
   } catch {
     return false;
@@ -428,9 +354,9 @@ function smokeTest(platform: PlatformInfo): void {
   console.log('\n==> Smoke test');
   const agentOrb = runtimeExe(platform, 'agent_orb');
   if (platform.platform === 'windows') {
-    run(agentOrb, ['run', '--', 'cmd', '/C', 'echo', 'hello'], { stdio: 'inherit' });
+    run(agentOrb, ['launch', '--adapter', 'cmd', '--', '/C', 'echo', 'hello'], { stdio: 'inherit' });
   } else {
-    run(agentOrb, ['run', '--', 'echo', 'hello'], { stdio: 'inherit' });
+    run(agentOrb, ['launch', '--adapter', 'echo', '--', 'hello'], { stdio: 'inherit' });
   }
 }
 
