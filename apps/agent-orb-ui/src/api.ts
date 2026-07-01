@@ -23,3 +23,7 @@ export async function clearStatus(): Promise<void> {
 export async function getConfig(): Promise<UiConfig> {
   return await invoke<UiConfig>('get_config');
 }
+
+export async function setPanelOpen(open: boolean): Promise<void> {
+  await invoke('set_panel_open', { open });
+}

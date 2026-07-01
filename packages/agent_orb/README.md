@@ -64,5 +64,5 @@ For Windows-host testing, prefer either:
 
 ```powershell
 cd $env:TEMP\agent-orb-npx
-npx --yes .\solar_orb-agent_orb-0.1.6.tgz --help
+npx --yes .\solar_orb-agent_orb-0.1.7.tgz --help
 ```

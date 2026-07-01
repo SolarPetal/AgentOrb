@@ -8,6 +8,10 @@ use tauri::Manager;
 use agent_orb_core::config::Config;
 
 const TOKEN_FILE_NAME: &str = "token";
+const COMPACT_MIN_SIZE: f64 = 32.0;
+const PANEL_WIDTH: f64 = 320.0;
+const PANEL_HEIGHT: f64 = 220.0;
+const PANEL_MARGIN: f64 = 12.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct StatusSnapshot {
@@ -120,6 +124,12 @@ fn get_config() -> UiConfig {
     UiConfig::from(Config::load_from_dir_or_default(default_config_dir()))
 }
 
+#[tauri::command]
+fn set_panel_open(window: tauri::WebviewWindow, open: bool) -> Result<(), String> {
+    let config = Config::load_from_dir_or_default(default_config_dir());
+    apply_panel_window_state(&window, open, &config).map_err(|err| err.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -127,12 +137,79 @@ fn main() {
                 let config = Config::load_from_dir_or_default(default_config_dir());
                 let _ = window.set_always_on_top(config.orb.always_on_top);
                 let _ = window.set_ignore_cursor_events(config.orb.click_through);
+                let _ = apply_panel_window_state(&window, false, &config);
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_status, clear_status, get_config])
+        .invoke_handler(tauri::generate_handler![
+            get_status,
+            clear_status,
+            get_config,
+            set_panel_open
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Agent Orb UI");
+}
+
+fn apply_panel_window_state(
+    window: &tauri::WebviewWindow,
+    open: bool,
+    config: &Config,
+) -> tauri::Result<()> {
+    let monitor = window.current_monitor()?.or(window.primary_monitor()?);
+    let scale_factor = monitor
+        .as_ref()
+        .map(|monitor| monitor.scale_factor())
+        .unwrap_or(1.0);
+    let compact_size = f64::from(config.orb.size).max(COMPACT_MIN_SIZE);
+    let (width, height) = if open {
+        (PANEL_WIDTH, PANEL_HEIGHT)
+    } else {
+        (compact_size, compact_size)
+    };
+    let width_px = logical_to_physical_u32(width, scale_factor);
+    let height_px = logical_to_physical_u32(height, scale_factor);
+
+    window.set_size(tauri::PhysicalSize::new(width_px, height_px))?;
+
+    if let Some(monitor) = monitor {
+        let work_area = monitor.work_area();
+        let margin = logical_to_physical_i32(PANEL_MARGIN, scale_factor);
+        let wants_right = config.orb.position.contains("right");
+        let wants_bottom = config.orb.position.contains("bottom");
+        let x = if wants_right {
+            work_area.position.x + work_area.size.width as i32 - width_px as i32 - margin
+        } else {
+            work_area.position.x + margin
+        };
+        let y = if wants_bottom {
+            work_area.position.y + work_area.size.height as i32 - height_px as i32 - margin
+        } else {
+            work_area.position.y + margin
+        };
+
+        window.set_position(tauri::PhysicalPosition::new(
+            x.max(work_area.position.x),
+            y.max(work_area.position.y),
+        ))?;
+    }
+
+    let _ = window.set_always_on_top(config.orb.always_on_top);
+    if open {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+
+    Ok(())
+}
+
+fn logical_to_physical_u32(value: f64, scale_factor: f64) -> u32 {
+    (value * scale_factor).round().max(1.0) as u32
+}
+
+fn logical_to_physical_i32(value: f64, scale_factor: f64) -> i32 {
+    (value * scale_factor).round().max(0.0) as i32
 }
 
 #[derive(Debug)]

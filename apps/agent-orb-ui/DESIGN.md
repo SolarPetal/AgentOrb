@@ -32,7 +32,7 @@ Alternative: WebSocket stream. Lower latency but more lifecycle complexity.
 
 ### Click-to-expand panel
 
-The orb starts as a compact always-on-top window and expands the Tauri window into a small details panel when clicked. Expansion resizes and re-anchors the native window against the configured screen corner, so opening from the top-right corner does not push the panel off-screen. The orb button is explicitly marked as `no-drag`; otherwise the frameless-window drag region can swallow click events on desktop webviews.
+The orb starts as a compact always-on-top window and expands into a small details panel when clicked. The frontend asks the Rust command `set_panel_open` to resize and re-anchor the native Tauri window against the configured screen corner; doing this in Rust avoids production permission failures from frontend-only `setSize` / `setPosition` calls. The orb button is explicitly marked as `no-drag`; otherwise the frameless-window drag region can swallow click events on desktop webviews.
 
 Alternative: separate dashboard window. More room, but too heavy for the MVP ambient-orb workflow.
 
@@ -44,4 +44,4 @@ Alternative: separate dashboard window. More room, but too heavy for the MVP amb
 ## Change history
 
 - 2026-06-30: Added config-driven colors/size/opacity, daemon status polling, and click-to-clear.
-- 2026-07-01: Added click-to-expand details panel and removed the drag-region click blocker from the orb button.
+- 2026-07-01: Added click-to-expand details panel, moved native resize/positioning into a Rust command, and removed the drag-region click blocker from the orb button.

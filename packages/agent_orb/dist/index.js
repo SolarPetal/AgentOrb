@@ -34,7 +34,7 @@ async function main() {
         case 'version':
         case '--version':
         case '-v':
-            console.log('agent_orb bootstrapper 0.1.6');
+            console.log('agent_orb bootstrapper 0.1.7');
             break;
         case 'help':
         case '--help':
