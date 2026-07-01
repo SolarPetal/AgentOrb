@@ -111,11 +111,17 @@ function releaseBaseUrl(platform, options) {
     const bundled = bundledReleaseBaseUrl(platform);
     if (bundled)
         return bundled;
-    const version = process.env.AGENT_ORB_VERSION ?? 'v0.1.0';
+    const version = process.env.AGENT_ORB_VERSION ?? defaultReleaseVersion() ?? 'v0.1.0';
     const repo = githubRepository();
     if (repo)
         return `https://github.com/${repo}/releases/download/${version}`;
     return undefined;
+}
+function defaultReleaseVersion() {
+    const version = readPackageVersion();
+    if (!version)
+        return undefined;
+    return version.startsWith('v') ? version : `v${version}`;
 }
 function githubRepository() {
     const configured = process.env.AGENT_ORB_GITHUB_REPOSITORY;
@@ -130,11 +136,18 @@ function githubRepository() {
     return undefined;
 }
 function readPackageGithubRepository() {
+    const packageJson = readPackageJson();
+    const repo = packageJson?.config?.github_repository;
+    return typeof repo === 'string' && repo.trim() ? repo.trim() : undefined;
+}
+function readPackageVersion() {
+    const version = readPackageJson()?.version;
+    return typeof version === 'string' && version.trim() ? version.trim() : undefined;
+}
+function readPackageJson() {
     try {
         const packageJsonPath = fileURLToPath(new URL('../package.json', import.meta.url));
-        const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-        const repo = packageJson.config?.github_repository;
-        return typeof repo === 'string' && repo.trim() ? repo.trim() : undefined;
+        return JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
     }
     catch {
         return undefined;

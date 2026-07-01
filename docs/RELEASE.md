@@ -16,8 +16,9 @@ The npm package `agent_orb` stays lightweight and downloads the matching runtime
 2. Push a tag:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+VERSION=$(node -p "require('./packages/agent_orb/package.json').version")
+git tag "v$VERSION"
+git push origin "v$VERSION"
 ```
 
 3. GitHub Actions workflow `.github/workflows/release.yml` builds and uploads release assets.
@@ -36,10 +37,10 @@ Or users can override at runtime:
 
 ```bash
 AGENT_ORB_GITHUB_REPOSITORY=OWNER/REPO npx @solar_orb/agent_orb
-AGENT_ORB_VERSION=v0.1.0 npx @solar_orb/agent_orb
+AGENT_ORB_VERSION=v0.1.3 npx @solar_orb/agent_orb
 ```
 
-If `github_repository` is empty and no override is supplied, setup will fall back to local bundled assets or source build.
+By default, the bootstrapper downloads the GitHub Release tag matching its own npm package version, for example npm `0.1.3` downloads release `v0.1.3`. If `github_repository` is empty and no override is supplied, setup will fall back to local bundled assets or source build.
 
 ## Local smoke
 
