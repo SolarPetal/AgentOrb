@@ -72,7 +72,7 @@ Local development:
   npx --yes ./packages/agent_orb setup --yes
 
 After npm publish:
-  npx agent_orb
+  npx @solar_orb/agent_orb
 `);
 }
 main().catch((error) => {

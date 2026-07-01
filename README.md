@@ -46,7 +46,7 @@ cargo run -p agent-orb-daemon
 ## User setup
 
 ```bash
-npx agent_orb
+npx @solar_orb/agent_orb
 ```
 
 The bootstrapper detects Codex CLI and Claude Code CLI if installed, writes `config.toml`, installs native runtime binaries, starts the daemon, and creates optional adapter shims without replacing the original CLIs.

@@ -35,8 +35,8 @@ Before publishing to npm, set the repository in `packages/agent_orb/package.json
 Or users can override at runtime:
 
 ```bash
-AGENT_ORB_GITHUB_REPOSITORY=OWNER/REPO npx agent_orb
-AGENT_ORB_VERSION=v0.1.0 npx agent_orb
+AGENT_ORB_GITHUB_REPOSITORY=OWNER/REPO npx @solar_orb/agent_orb
+AGENT_ORB_VERSION=v0.1.0 npx @solar_orb/agent_orb
 ```
 
 If `github_repository` is empty and no override is supplied, setup will fall back to local bundled assets or source build.

@@ -3,7 +3,7 @@
 Local development bootstrapper for Agent Orb. It is intended to become:
 
 ```bash
-npx agent_orb
+npx @solar_orb/agent_orb
 ```
 
 after the package is published to npm.
