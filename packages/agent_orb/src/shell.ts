@@ -20,7 +20,7 @@ export function commandExists(command: string): boolean {
 }
 
 export function findCommand(command: string): string | undefined {
-  const pathEnv = process.env.PATH ?? '';
+  const pathEnv = getPathEnv();
   const searchDirs = pathEnv.split(process.platform === 'win32' ? ';' : ':').filter(Boolean);
   const candidates = process.platform === 'win32'
     ? commandCandidates(command)
@@ -34,6 +34,24 @@ export function findCommand(command: string): string | undefined {
   }
 
   return undefined;
+}
+
+export function getPathEnv(): string {
+  if (process.platform !== 'win32') return process.env.PATH ?? '';
+
+  const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === 'path');
+  return pathKey ? process.env[pathKey] ?? '' : process.env.PATH ?? '';
+}
+
+export function setPathEnv(value: string): void {
+  if (process.platform !== 'win32') {
+    process.env.PATH = value;
+    return;
+  }
+
+  const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === 'path') ?? 'Path';
+  process.env[pathKey] = value;
+  process.env.PATH = value;
 }
 
 export function run(command: string, args: string[], options: RunOptions = {}): RunResult {

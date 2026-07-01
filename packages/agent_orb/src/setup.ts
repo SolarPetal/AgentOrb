@@ -7,7 +7,7 @@ import { detectAdapters, type AdapterProfile } from './adapter.js';
 import { runtimeConfigFromEnv, writeConfig, type RuntimeConfig } from './config.js';
 import { installRuntimeBundle } from './download.js';
 import { detectPlatform, type PlatformInfo } from './platform.js';
-import { commandExists, run, spawnDetached } from './shell.js';
+import { commandExists, getPathEnv, run, setPathEnv, spawnDetached } from './shell.js';
 
 interface SetupOptions {
   yes?: boolean;
@@ -54,7 +54,7 @@ export async function setup(options: SetupOptions = {}): Promise<void> {
 
   const configPath = writeConfig(platform.configDir, selectedAdapters, runtime);
   createAdapterShims(platform, selectedAdapters);
-  ensurePathHint(platform);
+  ensurePathConfigured(platform);
   await ensureDaemon(platform, runtime);
 
   if (options.smoke ?? true) {
@@ -63,7 +63,13 @@ export async function setup(options: SetupOptions = {}): Promise<void> {
 
   console.log('\n✓ Agent Orb setup complete');
   console.log(`Config: ${configPath}`);
-  console.log(`Try:    ${runtimeExe(platform, 'agent_orb')} run -- ${platform.platform === 'windows' ? 'cmd /C echo hello' : 'echo hello'}`);
+  console.log(`Try:    agent_orb run -- ${platform.platform === 'windows' ? 'cmd /C echo hello' : 'echo hello'}`);
+  if (selectedAdapters.some((adapter) => adapter.name === 'codex')) {
+    console.log('Codex:  codex-orb');
+  }
+  if (selectedAdapters.some((adapter) => adapter.name === 'claude')) {
+    console.log('Claude: claude-orb');
+  }
   const orb = runtimeExe(platform, 'agent-orb-ui');
   if (fs.existsSync(orb)) {
     console.log(`Orb:    ${orb}`);
@@ -234,17 +240,65 @@ function createAdapterShims(platform: PlatformInfo, adapters: AdapterProfile[]):
   }
 }
 
-function ensurePathHint(platform: PlatformInfo): void {
-  const currentPath = process.env.PATH ?? '';
+function ensurePathConfigured(platform: PlatformInfo): void {
+  const currentPath = getPathEnv();
   const parts = currentPath.split(platform.pathDelimiter).filter(Boolean);
-  if (parts.includes(platform.runtimeDir)) return;
+  if (pathPartsContain(parts, platform.runtimeDir, platform)) {
+    console.log(`✓ runtime dir already on PATH: ${platform.runtimeDir}`);
+    return;
+  }
+
+  setPathEnv(`${platform.runtimeDir}${platform.pathDelimiter}${currentPath}`);
 
   console.log('\nPATH note:');
   if (platform.platform === 'windows') {
-    console.log(`  Add to user PATH if needed: ${platform.runtimeDir}`);
-    console.log('  Or open a new terminal if installer/script already added it.');
+    if (addWindowsUserPath(platform.runtimeDir)) {
+      console.log(`  ✓ added runtime dir to user PATH: ${platform.runtimeDir}`);
+      console.log('  Open a new terminal to use agent_orb, codex-orb, and claude-orb globally.');
+    } else {
+      console.log(`  Could not update user PATH automatically. Add manually if needed: ${platform.runtimeDir}`);
+    }
   } else {
     console.log(`  export PATH="${platform.runtimeDir}:$PATH"`);
+  }
+}
+
+function pathPartsContain(parts: string[], target: string, platform: PlatformInfo): boolean {
+  const normalizedTarget = normalizePathForCompare(target, platform);
+  return parts.some((part) => normalizePathForCompare(part, platform) === normalizedTarget);
+}
+
+function normalizePathForCompare(value: string, platform: PlatformInfo): string {
+  const trimmed = value.trim().replace(/[\\/]+$/, '');
+  return platform.platform === 'windows' ? trimmed.toLowerCase() : trimmed;
+}
+
+function addWindowsUserPath(targetDir: string): boolean {
+  const script = [
+    '$target = $env:AGENT_ORB_TARGET_PATH',
+    "$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')",
+    '$parts = @()',
+    'if ($userPath) { $parts = $userPath -split \';\' | Where-Object { $_ } }',
+    '$normalizedTarget = $target.TrimEnd("\\").ToLowerInvariant()',
+    '$exists = $false',
+    'foreach ($part in $parts) {',
+    '  if ($part.TrimEnd("\\").ToLowerInvariant() -eq $normalizedTarget) { $exists = $true; break }',
+    '}',
+    'if (-not $exists) {',
+    "  [Environment]::SetEnvironmentVariable('Path', (($parts + $target) -join ';'), 'User')",
+    '}',
+  ].join('; ');
+
+  try {
+    run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+      env: {
+        ...process.env,
+        AGENT_ORB_TARGET_PATH: targetDir,
+      },
+    });
+    return true;
+  } catch {
+    return false;
   }
 }
 

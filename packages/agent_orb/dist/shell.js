@@ -5,7 +5,7 @@ export function commandExists(command) {
     return findCommand(command) !== undefined;
 }
 export function findCommand(command) {
-    const pathEnv = process.env.PATH ?? '';
+    const pathEnv = getPathEnv();
     const searchDirs = pathEnv.split(process.platform === 'win32' ? ';' : ':').filter(Boolean);
     const candidates = process.platform === 'win32'
         ? commandCandidates(command)
@@ -18,6 +18,21 @@ export function findCommand(command) {
         }
     }
     return undefined;
+}
+export function getPathEnv() {
+    if (process.platform !== 'win32')
+        return process.env.PATH ?? '';
+    const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === 'path');
+    return pathKey ? process.env[pathKey] ?? '' : process.env.PATH ?? '';
+}
+export function setPathEnv(value) {
+    if (process.platform !== 'win32') {
+        process.env.PATH = value;
+        return;
+    }
+    const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === 'path') ?? 'Path';
+    process.env[pathKey] = value;
+    process.env.PATH = value;
 }
 export function run(command, args, options = {}) {
     const result = spawnSync(command, args, {
