@@ -25,6 +25,14 @@ npx --yes ./packages/agent_orb setup --yes
 
 If `packages/agent_orb/releases` contains a matching native bundle, setup installs that bundle directly with SHA256 verification. Otherwise it falls back to source build. On Windows, setup also adds the runtime bin directory to the user PATH so a new terminal can run `agent_orb-codex`, `agent_orb-claude`, `agent_orb`, `codex-orb`, and `claude-orb` directly. The adapter launchers start the orb UI if needed before running the target CLI.
 
+Upgrade or repair an existing install:
+
+```bash
+npx @solar_orb/agent_orb upgrade --yes
+```
+
+The upgrade flow verifies the new bundle before stopping the old daemon/orb UI and removing old runtime files.
+
 ## Windows local path
 
 ```powershell
@@ -55,5 +63,5 @@ For Windows-host testing, prefer either:
 
 ```powershell
 cd $env:TEMP\agent-orb-npx
-npx --yes .\solar_orb-agent_orb-0.1.2.tgz --help
+npx --yes .\solar_orb-agent_orb-0.1.3.tgz --help
 ```

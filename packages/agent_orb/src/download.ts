@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseChecksums, verifyChecksum } from './checksum.js';
 import type { PlatformInfo } from './platform.js';
-import { run } from './shell.js';
+import { commandExists, run } from './shell.js';
 
 export interface BundleInstallOptions {
   force?: boolean;
@@ -42,6 +42,7 @@ export async function installRuntimeBundle(platform: PlatformInfo, options: Bund
     verifyChecksum(bundlePath, expected);
     console.log(`✓ checksum verified: ${platform.bundleName}`);
 
+    cleanupInstalledRuntime(platform);
     extractBundle(bundlePath, tempDir, platform);
     writeInstallManifest(platform, {
       bundle: platform.bundleName,
@@ -58,6 +59,59 @@ export async function installRuntimeBundle(platform: PlatformInfo, options: Bund
 export function runtimeLooksInstalled(platform: PlatformInfo): boolean {
   const required = ['agent_orb', 'agent_orbd'].map((name) => path.join(platform.runtimeDir, `${name}${platform.exeSuffix}`));
   return required.every((file) => fs.existsSync(file));
+}
+
+export function cleanupInstalledRuntime(platform: PlatformInfo): void {
+  if (!fs.existsSync(platform.runtimeDir)) return;
+
+  console.log('\n==> Cleaning previous runtime files');
+  stopRuntimeProcesses(platform);
+
+  for (const filename of knownRuntimeFiles(platform)) {
+    const filePath = path.join(platform.runtimeDir, filename);
+    if (!fs.existsSync(filePath)) continue;
+    fs.rmSync(filePath, { force: true });
+    console.log(`✓ removed ${filePath}`);
+  }
+}
+
+function stopRuntimeProcesses(platform: PlatformInfo): void {
+  if (platform.platform === 'windows') {
+    for (const imageName of ['agent_orbd.exe', 'agent-orb-ui.exe']) {
+      run('taskkill', ['/F', '/T', '/IM', imageName], {
+        allowFailure: true,
+      });
+    }
+    return;
+  }
+
+  if (!commandExists('pkill')) return;
+  for (const processName of ['agent_orbd', 'agent-orb-ui']) {
+    run('pkill', ['-x', processName], {
+      allowFailure: true,
+    });
+  }
+}
+
+function knownRuntimeFiles(platform: PlatformInfo): string[] {
+  const executableNames = [
+    `agent_orb${platform.exeSuffix}`,
+    `agent_orbd${platform.exeSuffix}`,
+    `agent-orb-ui${platform.exeSuffix}`,
+  ];
+
+  return [
+    ...executableNames,
+    'agent-orb-runtime.json',
+    'agent_orb-codex',
+    'agent_orb-claude',
+    'codex-orb',
+    'claude-orb',
+    'agent_orb-codex.cmd',
+    'agent_orb-claude.cmd',
+    'codex-orb.cmd',
+    'claude-orb.cmd',
+  ];
 }
 
 function releaseBaseUrl(platform: PlatformInfo, options: BundleInstallOptions): string | undefined {

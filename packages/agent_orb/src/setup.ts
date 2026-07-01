@@ -5,7 +5,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { detectAdapters, type AdapterProfile } from './adapter.js';
 import { runtimeConfigFromEnv, writeConfig, type RuntimeConfig } from './config.js';
-import { installRuntimeBundle } from './download.js';
+import { cleanupInstalledRuntime, installRuntimeBundle } from './download.js';
 import { detectPlatform, type PlatformInfo } from './platform.js';
 import { commandExists, getPathEnv, run, setPathEnv, spawnDetached } from './shell.js';
 
@@ -83,6 +83,7 @@ function installRuntimeFromSource(platform: PlatformInfo): void {
   const repoRoot = findRepoRoot();
   console.log(`Repository: ${repoRoot}`);
   buildRuntime(repoRoot);
+  cleanupInstalledRuntime(platform);
   installRuntime(repoRoot, platform);
 }
 

@@ -81,6 +81,13 @@ AGENT_ORB_CONFIG_DIR="$CONFIG_DIR" \
 AGENT_ORB_DAEMON_PORT="$SMOKE_PORT" \
 npm exec --yes --package "$TARBALL" -- agent_orb setup --yes --no-smoke --release-dir "$RELEASE_DIR"
 
+echo "==> Upgrade smoke"
+PATH="$FAKE_ADAPTER_DIR:$PATH" \
+AGENT_ORB_BIN_DIR="$BIN_DIR" \
+AGENT_ORB_CONFIG_DIR="$CONFIG_DIR" \
+AGENT_ORB_DAEMON_PORT="$SMOKE_PORT" \
+npm exec --yes --package "$TARBALL" -- agent_orb upgrade --yes --no-smoke --release-dir "$RELEASE_DIR"
+
 if [[ -n "$CONFIG_DIR" && ! -f "$CONFIG_DIR/token" ]]; then
   echo "token was not created; starting isolated smoke daemon" >&2
   AGENT_ORB_CONFIG_DIR="$CONFIG_DIR" "$BIN_DIR/agent_orbd" >/tmp/agent-orb-smoke-daemon.log 2>&1 &

@@ -5,7 +5,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { detectAdapters } from './adapter.js';
 import { runtimeConfigFromEnv, writeConfig } from './config.js';
-import { installRuntimeBundle } from './download.js';
+import { cleanupInstalledRuntime, installRuntimeBundle } from './download.js';
 import { detectPlatform } from './platform.js';
 import { commandExists, getPathEnv, run, setPathEnv, spawnDetached } from './shell.js';
 export async function setup(options = {}) {
@@ -65,6 +65,7 @@ function installRuntimeFromSource(platform) {
     const repoRoot = findRepoRoot();
     console.log(`Repository: ${repoRoot}`);
     buildRuntime(repoRoot);
+    cleanupInstalledRuntime(platform);
     installRuntime(repoRoot, platform);
 }
 export async function doctor(platform = detectPlatform(), runtime = runtimeConfigFromEnv()) {

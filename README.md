@@ -68,6 +68,14 @@ codex-orb   # compatibility alias
 claude-orb  # compatibility alias
 ```
 
+Upgrade or repair an existing installation:
+
+```bash
+npx @solar_orb/agent_orb upgrade --yes
+```
+
+`upgrade` verifies the new runtime bundle first, then stops the old local daemon/orb UI, removes old Agent Orb runtime files and shims, installs the new runtime, recreates launchers, and restarts the daemon/orb.
+
 ## Configuration
 
 Agent Orb reads `config.toml` from the platform config directory:

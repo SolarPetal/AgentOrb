@@ -23,10 +23,20 @@ async function main(): Promise<void> {
     case 'doctor':
       await doctor();
       break;
+    case 'upgrade':
+      await setup({
+        yes: flags.has('--yes') || flags.has('-y'),
+        smoke: !flags.has('--no-smoke'),
+        force: true,
+        buildFromSource: flags.has('--build-from-source'),
+        releaseBaseUrl: flagValue(args, '--release-base-url'),
+        releaseDir: flagValue(args, '--release-dir'),
+      });
+      break;
     case 'version':
     case '--version':
     case '-v':
-      console.log('agent_orb bootstrapper 0.1.2');
+      console.log('agent_orb bootstrapper 0.1.3');
       break;
     case 'help':
     case '--help':
@@ -65,6 +75,7 @@ Usage:
             [--release-dir <dir> | --release-base-url <url>]
             [--build-from-source]
   agent_orb doctor
+  agent_orb upgrade [--yes] [--no-smoke]
   agent_orb version
 
 Local development:
