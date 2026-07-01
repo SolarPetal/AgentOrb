@@ -4,15 +4,16 @@ Rust command-line wrapper for observing AI CLI runtime activity.
 
 ## Why it exists
 
-Users should run their normal CLI command while Agent Orb observes stdout, stderr, exit status, prompt-like output, and idle time.
+Users should run their normal CLI command while Agent Orb preserves interactive terminal behavior and emits lifecycle events to the orb.
 
 ## Responsibilities
 
 - Run `agent_orb run -- <command>`.
-- Spawn and preserve target process stdin/stdout/stderr behavior.
+- Spawn target processes without breaking interactive terminal behavior.
 - Emit normalized events to the local daemon.
 - Auto-start `agent_orbd` when possible.
 - Detect Codex / Claude / generic sources from command names.
+- Preserve a real terminal for Codex and Claude launchers; monitor stdout/stderr for generic commands.
 
 ## Internal layout
 

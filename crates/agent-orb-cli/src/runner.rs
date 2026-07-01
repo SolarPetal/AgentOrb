@@ -40,6 +40,13 @@ pub async fn run_wrapped_command(command: Vec<String>) -> Result<i32, AppError> 
     let session_id = Uuid::now_v7().to_string();
     let started_at = OffsetDateTime::now_utc();
 
+    if should_use_tty_passthrough(&source) {
+        return run_tty_passthrough_command(
+            &command, client, source, workspace, session_id, started_at,
+        )
+        .await;
+    }
+
     let mut child = Command::new(&command[0])
         .args(&command[1..])
         .stdin(Stdio::inherit())
@@ -135,6 +142,62 @@ pub async fn run_wrapped_command(command: Vec<String>) -> Result<i32, AppError> 
     warn_if_event_failed(client.post_event(&exited_event).await, "process.exited");
 
     Ok(exit_code)
+}
+
+async fn run_tty_passthrough_command(
+    command: &[String],
+    client: DaemonClient,
+    source: Source,
+    workspace: String,
+    session_id: String,
+    started_at: OffsetDateTime,
+) -> Result<i32, AppError> {
+    let mut child = Command::new(&command[0])
+        .args(&command[1..])
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(|source| AppError::Spawn {
+            command: command[0].clone(),
+            source,
+        })?;
+
+    let pid = child.id();
+    let started_event = build_event(
+        &session_id,
+        source.clone(),
+        workspace.clone(),
+        EventType::SessionStarted,
+        json!({
+            "command": shell_join(command),
+            "pid": pid,
+            "platform": env::consts::OS,
+            "stdio": "inherit",
+        }),
+    );
+    warn_if_event_failed(client.post_event(&started_event).await, "session.started");
+
+    let status = child.wait().await.map_err(AppError::Io)?;
+    let exit_code = status.code().unwrap_or(1);
+    let duration_ms = (OffsetDateTime::now_utc() - started_at).whole_milliseconds();
+    let exited_event = build_event(
+        &session_id,
+        source,
+        workspace,
+        EventType::ProcessExited,
+        json!({
+            "exit_code": exit_code,
+            "duration_ms": duration_ms.max(0),
+        }),
+    );
+    warn_if_event_failed(client.post_event(&exited_event).await, "process.exited");
+
+    Ok(exit_code)
+}
+
+fn should_use_tty_passthrough(source: &Source) -> bool {
+    matches!(source, Source::Codex | Source::Claude)
 }
 
 async fn forward_stream<R, W>(
@@ -280,5 +343,18 @@ async fn join_stream_task(
 fn warn_if_event_failed(result: Result<(), AppError>, event_name: &str) {
     if let Err(err) = result {
         eprintln!("agent_orb: failed to send {event_name}: {err}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_use_tty_passthrough;
+    use agent_orb_core::source::Source;
+
+    #[test]
+    fn codex_and_claude_need_real_terminal_stdio() {
+        assert!(should_use_tty_passthrough(&Source::Codex));
+        assert!(should_use_tty_passthrough(&Source::Claude));
+        assert!(!should_use_tty_passthrough(&Source::Generic));
     }
 }
