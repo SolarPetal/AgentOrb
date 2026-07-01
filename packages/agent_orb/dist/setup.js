@@ -41,6 +41,7 @@ export async function setup(options = {}) {
     createAdapterShims(platform, selectedAdapters);
     ensurePathConfigured(platform);
     await ensureDaemon(platform, runtime);
+    const orbStarted = startOrbUiIfAvailable(platform);
     if (options.smoke ?? true) {
         smokeTest(platform);
     }
@@ -48,14 +49,14 @@ export async function setup(options = {}) {
     console.log(`Config: ${configPath}`);
     console.log(`Try:    agent_orb run -- ${platform.platform === 'windows' ? 'cmd /C echo hello' : 'echo hello'}`);
     if (selectedAdapters.some((adapter) => adapter.name === 'codex')) {
-        console.log('Codex:  codex-orb');
+        console.log('Codex:  agent_orb-codex');
     }
     if (selectedAdapters.some((adapter) => adapter.name === 'claude')) {
-        console.log('Claude: claude-orb');
+        console.log('Claude: agent_orb-claude');
     }
     const orb = runtimeExe(platform, 'agent-orb-ui');
     if (fs.existsSync(orb)) {
-        console.log(`Orb:    ${orb}`);
+        console.log(`Orb:    ${orbStarted ? 'started' : orb}`);
     }
 }
 function installRuntimeFromSource(platform) {
@@ -194,17 +195,28 @@ function createAdapterShims(platform, adapters) {
         return;
     console.log('\n==> Creating adapter shims');
     for (const adapter of adapters) {
-        const shimPath = path.join(platform.runtimeDir, adapter.wrapperCommand);
-        if (platform.platform === 'windows') {
-            const target = adapter.name;
-            fs.writeFileSync(shimPath, `@echo off\r\n"%~dp0agent_orb.exe" run -- ${target} %*\r\n`, 'ascii');
+        const commands = uniqueStrings([adapter.launcherCommand, adapter.wrapperCommand]);
+        for (const command of commands) {
+            const shimPath = path.join(platform.runtimeDir, command);
+            if (platform.platform === 'windows') {
+                fs.writeFileSync(shimPath, windowsAdapterShim(adapter.name), 'ascii');
+            }
+            else {
+                fs.writeFileSync(shimPath, unixAdapterShim(adapter.name), 'utf8');
+                fs.chmodSync(shimPath, 0o755);
+            }
+            console.log(`✓ ${shimPath}`);
         }
-        else {
-            fs.writeFileSync(shimPath, `#!/usr/bin/env sh\n"$(dirname "$0")/agent_orb" run -- ${adapter.name} "$@"\n`, 'utf8');
-            fs.chmodSync(shimPath, 0o755);
-        }
-        console.log(`✓ ${shimPath}`);
     }
+}
+function uniqueStrings(values) {
+    return [...new Set(values)];
+}
+function windowsAdapterShim(adapterName) {
+    return `@echo off\r\nsetlocal\r\nset "ORB_UI=%~dp0agent-orb-ui.exe"\r\nif exist "%ORB_UI%" (\r\n  tasklist /FI "IMAGENAME eq agent-orb-ui.exe" 2>NUL | find /I "agent-orb-ui.exe" >NUL\r\n  if errorlevel 1 start "" "%ORB_UI%"\r\n)\r\n"%~dp0agent_orb.exe" run -- ${adapterName} %*\r\nexit /b %ERRORLEVEL%\r\n`;
+}
+function unixAdapterShim(adapterName) {
+    return `#!/usr/bin/env sh\nset -eu\nDIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nORB_UI="$DIR/agent-orb-ui"\nif [ -x "$ORB_UI" ] && { [ -n "\${DISPLAY:-}" ] || [ -n "\${WAYLAND_DISPLAY:-}" ]; }; then\n  running=0\n  if command -v pgrep >/dev/null 2>&1 && pgrep -x agent-orb-ui >/dev/null 2>&1; then\n    running=1\n  fi\n  if [ "$running" = "0" ]; then\n    "$ORB_UI" >/dev/null 2>&1 &\n  fi\nfi\nexec "$DIR/agent_orb" run -- ${adapterName} "$@"\n`;
 }
 function ensurePathConfigured(platform) {
     const currentPath = getPathEnv();
@@ -218,7 +230,7 @@ function ensurePathConfigured(platform) {
     if (platform.platform === 'windows') {
         if (addWindowsUserPath(platform.runtimeDir)) {
             console.log(`  ✓ added runtime dir to user PATH: ${platform.runtimeDir}`);
-            console.log('  Open a new terminal to use agent_orb, codex-orb, and claude-orb globally.');
+            console.log('  Open a new terminal to use agent_orb-codex, agent_orb-claude, and agent_orb globally.');
         }
         else {
             console.log(`  Could not update user PATH automatically. Add manually if needed: ${platform.runtimeDir}`);
@@ -259,6 +271,47 @@ function addWindowsUserPath(targetDir) {
             },
         });
         return true;
+    }
+    catch {
+        return false;
+    }
+}
+function startOrbUiIfAvailable(platform) {
+    const orb = runtimeExe(platform, 'agent-orb-ui');
+    if (!fs.existsSync(orb))
+        return false;
+    if (platform.platform === 'windows') {
+        if (isWindowsProcessRunning('agent-orb-ui.exe'))
+            return true;
+        spawnDetached(orb, []);
+        return true;
+    }
+    if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY)
+        return false;
+    if (isUnixProcessRunning('agent-orb-ui'))
+        return true;
+    spawnDetached(orb, []);
+    return true;
+}
+function isWindowsProcessRunning(imageName) {
+    try {
+        const result = run('tasklist', ['/FI', `IMAGENAME eq ${imageName}`], {
+            allowFailure: true,
+        });
+        return result.stdout.toLowerCase().includes(imageName.toLowerCase());
+    }
+    catch {
+        return false;
+    }
+}
+function isUnixProcessRunning(processName) {
+    if (!commandExists('pgrep'))
+        return false;
+    try {
+        const result = run('pgrep', ['-x', processName], {
+            allowFailure: true,
+        });
+        return result.status === 0;
     }
     catch {
         return false;

@@ -49,16 +49,23 @@ cargo run -p agent-orb-daemon
 npx @solar_orb/agent_orb
 ```
 
-The bootstrapper detects Codex CLI and Claude Code CLI if installed, writes `config.toml`, installs native runtime binaries, starts the daemon, adds the runtime bin directory to the user PATH on Windows, and creates optional adapter shims without replacing the original CLIs.
+The bootstrapper detects Codex CLI and Claude Code CLI if installed, writes `config.toml`, installs native runtime binaries, starts the daemon and orb UI, adds the runtime bin directory to the user PATH on Windows, and creates adapter launchers without replacing the original CLIs.
 
-After setup, open a new terminal and run:
+After setup, open a new terminal and run one command:
+
+```bash
+agent_orb-codex   # starts the orb UI if needed, then runs Codex through Agent Orb
+agent_orb-claude  # starts the orb UI if needed, then runs Claude Code through Agent Orb
+```
+
+Lower-level commands remain available:
 
 ```bash
 agent_orb run -- echo hello
 agent_orb run -- codex
 agent_orb run -- claude
-codex-orb   # if Codex CLI was detected during setup
-claude-orb  # if Claude Code CLI was detected during setup
+codex-orb   # compatibility alias
+claude-orb  # compatibility alias
 ```
 
 ## Configuration

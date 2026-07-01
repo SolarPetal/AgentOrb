@@ -5,6 +5,7 @@ export interface AdapterProfile {
   displayName: string;
   binaryCandidates: string[];
   wrapperCommand: string;
+  launcherCommand: string;
   promptPatterns: string[];
   foundBinary?: string;
 }
@@ -15,6 +16,7 @@ export const adapters: AdapterProfile[] = [
     displayName: 'Codex CLI',
     binaryCandidates: process.platform === 'win32' ? ['codex.exe', 'codex'] : ['codex'],
     wrapperCommand: process.platform === 'win32' ? 'codex-orb.cmd' : 'codex-orb',
+    launcherCommand: process.platform === 'win32' ? 'agent_orb-codex.cmd' : 'agent_orb-codex',
     promptPatterns: ['approve', 'permission', 'continue?', 'yes/no'],
   },
   {
@@ -22,6 +24,7 @@ export const adapters: AdapterProfile[] = [
     displayName: 'Claude Code CLI',
     binaryCandidates: process.platform === 'win32' ? ['claude.exe', 'claude'] : ['claude'],
     wrapperCommand: process.platform === 'win32' ? 'claude-orb.cmd' : 'claude-orb',
+    launcherCommand: process.platform === 'win32' ? 'agent_orb-claude.cmd' : 'agent_orb-claude',
     promptPatterns: ['continue?', 'permission', 'press enter', 'approve'],
   },
 ];

@@ -72,7 +72,7 @@ mkdir -p "$RELEASE_DIR"
 echo "==> Pack npm tarball"
 (cd "$ROOT/packages/agent_orb" && npm pack --pack-destination "$PACK_DIR") >/tmp/agent-orb-npm-pack.out
 cat /tmp/agent-orb-npm-pack.out
-TARBALL="$PACK_DIR/agent_orb-0.1.0.tgz"
+TARBALL="$PACK_DIR/$(tail -n 1 /tmp/agent-orb-npm-pack.out)"
 
 echo "==> Install via npx-compatible npm exec"
 PATH="$FAKE_ADAPTER_DIR:$PATH" \
@@ -97,6 +97,8 @@ AGENT_ORB_CONFIG_DIR="$CONFIG_DIR" "$BIN_DIR/agent_orb" run -- echo npx-smoke-ok
 echo "==> Adapter wrapper smoke"
 PATH="$FAKE_ADAPTER_DIR:$PATH" AGENT_ORB_CONFIG_DIR="$CONFIG_DIR" "$BIN_DIR/agent_orb" run -- codex
 PATH="$FAKE_ADAPTER_DIR:$PATH" AGENT_ORB_CONFIG_DIR="$CONFIG_DIR" "$BIN_DIR/agent_orb" run -- claude
+PATH="$FAKE_ADAPTER_DIR:$PATH" AGENT_ORB_CONFIG_DIR="$CONFIG_DIR" "$BIN_DIR/agent_orb-codex"
+PATH="$FAKE_ADAPTER_DIR:$PATH" AGENT_ORB_CONFIG_DIR="$CONFIG_DIR" "$BIN_DIR/agent_orb-claude"
 PATH="$FAKE_ADAPTER_DIR:$PATH" AGENT_ORB_CONFIG_DIR="$CONFIG_DIR" "$BIN_DIR/codex-orb"
 PATH="$FAKE_ADAPTER_DIR:$PATH" AGENT_ORB_CONFIG_DIR="$CONFIG_DIR" "$BIN_DIR/claude-orb"
 
