@@ -9,10 +9,11 @@ Users need a low-distraction desktop signal that shows whether an AI CLI is acti
 ## Responsibilities
 
 - Start a transparent always-on-top orb window.
+- Expand into a compact details panel when the orb is clicked.
 - Poll daemon status through Tauri commands.
 - Render colors and animations from visual status.
 - Read user config for colors, size, position, opacity, and click-through.
-- Clear completed/failed status on click.
+- Clear completed/failed status from the expanded panel.
 
 ## Dependencies
 
