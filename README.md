@@ -52,6 +52,13 @@ npx @solar_orb/agent_orb
 
 The bootstrapper detects Codex CLI and Claude Code CLI if installed, writes `config.toml`, installs native runtime binaries, adds the runtime bin directory to the user PATH on Windows, and creates adapter launchers without replacing the original CLIs. The launchers start a session-local daemon/orb UI on demand.
 
+If Windows setup cannot detect an already installed Codex CLI, pass the absolute shim path explicitly:
+
+```powershell
+$env:AGENT_ORB_CODEX_PATH = "C:\nvm4w\nodejs\codex.cmd"
+npx --yes @solar_orb/agent_orb@0.1.12 upgrade --yes
+```
+
 After setup, open a new terminal and run one command:
 
 ```bash

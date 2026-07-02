@@ -33,6 +33,13 @@ npx @solar_orb/agent_orb upgrade --yes
 
 The upgrade flow verifies the new bundle before stopping the old daemon/orb UI and removing old runtime files.
 
+If Windows cannot auto-detect Codex CLI, set an explicit path before setup:
+
+```powershell
+$env:AGENT_ORB_CODEX_PATH = "C:\nvm4w\nodejs\codex.cmd"
+npx --yes @solar_orb/agent_orb@0.1.12 upgrade --yes
+```
+
 ## Windows local path
 
 ```powershell
@@ -63,5 +70,5 @@ For Windows-host testing, prefer either:
 
 ```powershell
 cd $env:TEMP\agent-orb-npx
-npx --yes .\solar_orb-agent_orb-0.1.11.tgz --help
+npx --yes .\solar_orb-agent_orb-0.1.12.tgz --help
 ```

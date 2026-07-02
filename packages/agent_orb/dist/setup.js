@@ -206,6 +206,7 @@ function printDetectedAdapters(adapters) {
         }
         else {
             console.log(`  · ${adapter.displayName}: not found`);
+            console.log(`    hint: set ${adapter.pathEnvVar}=<absolute path> if it is installed outside this terminal PATH`);
         }
     }
 }

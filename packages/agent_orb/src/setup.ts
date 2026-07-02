@@ -242,6 +242,7 @@ function printDetectedAdapters(adapters: AdapterProfile[]): void {
       console.log(`  ✓ ${adapter.displayName}: ${adapter.foundBinary}`);
     } else {
       console.log(`  · ${adapter.displayName}: not found`);
+      console.log(`    hint: set ${adapter.pathEnvVar}=<absolute path> if it is installed outside this terminal PATH`);
     }
   }
 }

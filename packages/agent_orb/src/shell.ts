@@ -20,8 +20,17 @@ export function commandExists(command: string): boolean {
 }
 
 export function findCommand(command: string): string | undefined {
+  const direct = findDirectCommand(command);
+  if (direct) return direct;
+
+  const fromShell = findCommandFromShell(command);
+  if (fromShell) return fromShell;
+
   const pathEnv = getPathEnv();
-  const pathDirs = pathEnv.split(process.platform === 'win32' ? ';' : ':').filter(Boolean);
+  const pathDirs = pathEnv
+    .split(process.platform === 'win32' ? ';' : ':')
+    .map(cleanPathEntry)
+    .filter(Boolean);
   const searchDirs = uniquePaths([...pathDirs, ...extraCommandSearchDirs()]);
   const candidates = process.platform === 'win32'
     ? commandCandidates(command)
@@ -91,14 +100,14 @@ function uniquePaths(values: string[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
   for (const value of values) {
-    const normalized = process.platform === 'win32' ? value.trim().toLowerCase() : value.trim();
+    const cleaned = cleanPathEntry(value);
+    const normalized = process.platform === 'win32' ? cleaned.toLowerCase() : cleaned;
     if (!normalized || seen.has(normalized)) continue;
     seen.add(normalized);
-    result.push(value);
+    result.push(cleaned);
   }
   return result;
 }
-
 
 function extraCommandSearchDirs(): string[] {
   if (process.platform !== 'win32') return [];
@@ -110,9 +119,11 @@ function extraCommandSearchDirs(): string[] {
 
   add(process.env.NVM_SYMLINK);
   add(process.env.NVM_HOME);
+  add(process.env.npm_config_prefix);
   add(process.env.APPDATA ? path.join(process.env.APPDATA, 'npm') : undefined);
   add(process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'nodejs') : undefined);
   add(path.dirname(process.execPath));
+  for (const dir of npmPrefixDirs()) add(dir);
   add('C:\\nvm4w\\nodejs');
   add('C:\\Program Files\\nodejs');
   add('C:\\Program Files (x86)\\nodejs');
@@ -127,11 +138,16 @@ function extraCommandSearchDirs(): string[] {
 }
 
 function commandCandidates(command: string): string[] {
+  if (process.platform !== 'win32') return [command];
   if (path.extname(command)) return [command];
 
   const pathExt = process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD';
-  return [
+  return uniqueStrings([
     command,
+    `${command}.cmd`,
+    `${command}.exe`,
+    `${command}.bat`,
+    `${command}.com`,
     ...pathExt
       .split(';')
       .filter(Boolean)
@@ -140,7 +156,7 @@ function commandCandidates(command: string): string[] {
       .split(';')
       .filter(Boolean)
       .map((extension) => `${command}${extension.toUpperCase()}`),
-  ];
+  ]);
 }
 
 function isExecutableFile(filePath: string): boolean {
@@ -153,4 +169,64 @@ function isExecutableFile(filePath: string): boolean {
   } catch {
     return false;
   }
+}
+
+function findDirectCommand(command: string): string | undefined {
+  if (!hasPathSeparator(command) && !path.isAbsolute(command)) return undefined;
+
+  return commandCandidates(command).find(isExecutableFile);
+}
+
+function findCommandFromShell(command: string): string | undefined {
+  if (process.platform !== 'win32' || hasPathSeparator(command)) return undefined;
+
+  try {
+    const result = spawnSync('where.exe', [command], {
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    if (result.status !== 0) return undefined;
+
+    return (result.stdout ?? '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(isExecutableFile);
+  } catch {
+    return undefined;
+  }
+}
+
+function npmPrefixDirs(): string[] {
+  const dirs: string[] = [];
+  try {
+    const result = spawnSync('npm', ['config', 'get', 'prefix'], {
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    const prefix = result.status === 0 ? result.stdout.trim() : '';
+    if (prefix && !prefix.startsWith('undefined')) {
+      dirs.push(prefix);
+      dirs.push(path.join(prefix, 'bin'));
+    }
+  } catch {
+    // npm may not be on PATH in source-build scenarios; PATH scanning still runs.
+  }
+  return dirs;
+}
+
+function cleanPathEntry(value: string): string {
+  let cleaned = value.trim();
+  if (process.platform === 'win32') {
+    cleaned = cleaned.replace(/^"+|"+$/g, '');
+    cleaned = cleaned.replace(/%([^%]+)%/g, (_, name: string) => process.env[name] ?? `%${name}%`);
+  }
+  return cleaned;
+}
+
+function hasPathSeparator(value: string): boolean {
+  return value.includes('/') || value.includes('\\');
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
