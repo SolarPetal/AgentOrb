@@ -472,7 +472,7 @@ mod tests {
         store.apply_event(exit_event("done", Source::Codex, 0, &old_timestamp));
         store.apply_event(event(
             "starting",
-            Source::Claude,
+            Source::Generic,
             EventType::SessionStarted,
             &new_timestamp,
         ));

@@ -1,5 +1,6 @@
 use crate::{
     event::{EventEnvelope, EventType},
+    source::Source,
     status::InternalStatus,
 };
 
@@ -40,9 +41,16 @@ pub fn transition(current: InternalStatus, event: &EventEnvelope) -> InternalSta
     use InternalStatus::*;
 
     match event.event_type {
-        SessionStarted => Starting,
+        SessionStarted => {
+            if is_observed_adapter_session(event) {
+                Idle
+            } else {
+                Starting
+            }
+        }
         SessionCleared => Idle,
         SessionCancelled => Cancelled,
+        OutputReceived | StderrReceived if is_adapter_terminal_paint(event) => current,
         OutputReceived | StderrReceived => match current {
             Starting | Active | Silent | WaitingInput | Compacting => Active,
             other => other,
@@ -53,7 +61,7 @@ pub fn transition(current: InternalStatus, event: &EventEnvelope) -> InternalSta
             other => other,
         },
         PromptDetected => match current {
-            Starting | Active | Silent | WaitingInput => WaitingInput,
+            Idle | Starting | Active | Silent | WaitingInput => WaitingInput,
             other => other,
         },
         StuckTimeout => match current {
@@ -61,6 +69,7 @@ pub fn transition(current: InternalStatus, event: &EventEnvelope) -> InternalSta
             other => other,
         },
         ProcessExited => match current {
+            Idle if !process_exit_succeeded(event) => Failed,
             Starting | Active | Silent | WaitingInput | Compacting | Stuck => {
                 if process_exit_succeeded(event) {
                     Completed
@@ -71,6 +80,39 @@ pub fn transition(current: InternalStatus, event: &EventEnvelope) -> InternalSta
             other => other,
         },
     }
+}
+
+fn is_interactive_adapter(source: &Source) -> bool {
+    matches!(source, Source::Codex | Source::Claude)
+}
+
+fn is_observed_adapter_session(event: &EventEnvelope) -> bool {
+    is_interactive_adapter(&event.source)
+        && matches!(
+            event
+                .payload
+                .get("stdio")
+                .and_then(serde_json::Value::as_str),
+            Some("pty")
+        )
+}
+
+fn is_adapter_terminal_paint(event: &EventEnvelope) -> bool {
+    if !is_interactive_adapter(&event.source) {
+        return false;
+    }
+
+    let stream = event
+        .payload
+        .get("stream")
+        .and_then(serde_json::Value::as_str);
+    let synthetic = event
+        .payload
+        .get("synthetic")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+
+    matches!(stream, Some("pty")) || synthetic
 }
 
 fn status_hint(event: &EventEnvelope) -> Option<InternalStatus> {
@@ -192,6 +234,59 @@ mod tests {
             ..event(EventType::StatusHint)
         };
         assert_eq!(machine.apply(&hint), InternalStatus::Silent);
+    }
+
+    #[test]
+    fn adapter_start_is_idle_until_cli_state_hint_arrives() {
+        let mut machine = StateMachine::new();
+
+        let started = EventEnvelope {
+            source: Source::Claude,
+            payload: json!({ "stdio": "pty" }),
+            ..event(EventType::SessionStarted)
+        };
+        assert_eq!(machine.apply(&started), InternalStatus::Idle);
+
+        let terminal_paint = EventEnvelope {
+            source: Source::Claude,
+            payload: json!({ "stream": "pty", "bytes": 128 }),
+            ..event(EventType::OutputReceived)
+        };
+        assert_eq!(machine.apply(&terminal_paint), InternalStatus::Idle);
+
+        let thinking = EventEnvelope {
+            source: Source::Claude,
+            payload: json!({ "status": "thinking" }),
+            ..event(EventType::StatusHint)
+        };
+        assert_eq!(machine.apply(&thinking), InternalStatus::Silent);
+        assert_eq!(machine.apply(&terminal_paint), InternalStatus::Silent);
+
+        let executing = EventEnvelope {
+            source: Source::Claude,
+            payload: json!({ "status": "executing" }),
+            ..event(EventType::StatusHint)
+        };
+        assert_eq!(machine.apply(&executing), InternalStatus::Active);
+    }
+
+    #[test]
+    fn adapter_crash_from_idle_is_failed() {
+        let mut machine = StateMachine::new();
+
+        let started = EventEnvelope {
+            source: Source::Claude,
+            payload: json!({ "stdio": "pty" }),
+            ..event(EventType::SessionStarted)
+        };
+        assert_eq!(machine.apply(&started), InternalStatus::Idle);
+
+        let failed_exit = EventEnvelope {
+            source: Source::Claude,
+            payload: json!({ "exit_code": 2 }),
+            ..event(EventType::ProcessExited)
+        };
+        assert_eq!(machine.apply(&failed_exit), InternalStatus::Failed);
     }
 
     #[test]

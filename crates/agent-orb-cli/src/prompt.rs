@@ -30,106 +30,108 @@ impl StatusDetector {
     pub fn detect(&self, text: &str) -> Option<AdapterStatusHint> {
         let normalized = normalize_terminal_text(text);
         let lower = normalized.as_str();
+        let groups = [
+            (
+                AdapterStatusHint::Compacting,
+                4_u8,
+                &[
+                    "compacting",
+                    "compact",
+                    "auto-compact",
+                    "auto compact",
+                    "condensing",
+                    "compressing context",
+                    "context compression",
+                    "summarizing conversation",
+                    "summarising conversation",
+                    "压缩",
+                    "压缩上下文",
+                    "总结上下文",
+                ][..],
+            ),
+            (
+                AdapterStatusHint::Waiting,
+                3_u8,
+                &[
+                    "approve",
+                    "approval",
+                    "allow",
+                    "deny",
+                    "permission",
+                    "permissions",
+                    "confirm",
+                    "continue?",
+                    "yes/no",
+                    "y/n",
+                    "press enter",
+                    "press return",
+                    "do you want",
+                    "proceed?",
+                    "waiting for input",
+                    "需要确认",
+                    "等待输入",
+                    "是否继续",
+                ][..],
+            ),
+            (
+                AdapterStatusHint::Thinking,
+                2_u8,
+                &[
+                    "thinking",
+                    "reasoning",
+                    "analyzing",
+                    "analysing",
+                    "planning",
+                    "processing",
+                    "pondering",
+                    "working",
+                    "esc to interrupt",
+                    "思考",
+                    "分析",
+                    "计划",
+                    "推理",
+                ][..],
+            ),
+            (
+                AdapterStatusHint::Executing,
+                1_u8,
+                &[
+                    "running tool",
+                    "executing tool",
+                    "using tool",
+                    "tool use",
+                    "tool call",
+                    "running command",
+                    "executing command",
+                    "shell command",
+                    "bash(",
+                    "powershell(",
+                    "cmd.exe",
+                    "apply_patch",
+                    "applying patch",
+                    "editing file",
+                    "writing file",
+                    "reading file",
+                    "searching files",
+                    "fetching url",
+                    "call tool",
+                    "exec command",
+                    "运行工具",
+                    "执行工具",
+                    "执行命令",
+                    "读取文件",
+                    "写入文件",
+                ][..],
+            ),
+        ];
 
-        if contains_any(
-            lower,
-            &[
-                "compacting",
-                "compact",
-                "auto-compact",
-                "auto compact",
-                "condensing",
-                "compressing context",
-                "context compression",
-                "summarizing conversation",
-                "summarising conversation",
-                "压缩",
-                "压缩上下文",
-                "总结上下文",
-            ],
-        ) {
-            return Some(AdapterStatusHint::Compacting);
-        }
-
-        if contains_any(
-            lower,
-            &[
-                "approve",
-                "approval",
-                "allow",
-                "deny",
-                "permission",
-                "permissions",
-                "confirm",
-                "continue?",
-                "yes/no",
-                "y/n",
-                "press enter",
-                "press return",
-                "do you want",
-                "proceed?",
-                "waiting for input",
-                "需要确认",
-                "等待输入",
-                "是否继续",
-            ],
-        ) {
-            return Some(AdapterStatusHint::Waiting);
-        }
-
-        if contains_any(
-            lower,
-            &[
-                "running",
-                "executing",
-                "execute",
-                "shell",
-                "bash",
-                "powershell",
-                "cmd.exe",
-                "command",
-                "tool",
-                "apply_patch",
-                "patch",
-                "editing",
-                "writing",
-                "reading",
-                "searching",
-                "fetching",
-                "call",
-                "exec",
-                "运行",
-                "执行",
-                "读取",
-                "写入",
-                "工具",
-            ],
-        ) {
-            return Some(AdapterStatusHint::Executing);
-        }
-
-        if contains_any(
-            lower,
-            &[
-                "thinking",
-                "reasoning",
-                "analyzing",
-                "analysing",
-                "planning",
-                "processing",
-                "pondering",
-                "working",
-                "esc to interrupt",
-                "思考",
-                "分析",
-                "计划",
-                "推理",
-            ],
-        ) {
-            return Some(AdapterStatusHint::Thinking);
-        }
-
-        None
+        groups
+            .iter()
+            .filter_map(|(hint, priority, patterns)| {
+                latest_match_index(lower, patterns).map(|index| (index, *priority, *hint))
+            })
+            .max_by_key(|(index, priority, _)| (*index, *priority))
+            .map(|(_, _, hint)| hint)
     }
 }
 
@@ -174,8 +176,11 @@ pub fn truncate_output_sample(bytes: &[u8], max_sample_chars: usize) -> String {
     truncate_chars(sample.as_ref(), max_sample_chars)
 }
 
-fn contains_any(text: &str, patterns: &[&str]) -> bool {
-    patterns.iter().any(|pattern| text.contains(pattern))
+fn latest_match_index(text: &str, patterns: &[&str]) -> Option<usize> {
+    patterns
+        .iter()
+        .filter_map(|pattern| text.rfind(pattern))
+        .max()
 }
 
 fn normalize_terminal_text(text: &str) -> String {
@@ -268,5 +273,26 @@ mod tests {
             Some(AdapterStatusHint::Compacting)
         );
         assert_eq!(detector.detect("plain answer text"), None);
+    }
+
+    #[test]
+    fn status_detector_prefers_current_thinking_over_old_tool_text() {
+        let detector = StatusDetector::for_source(&Source::Claude);
+
+        assert_eq!(
+            detector
+                .detect("Previous tool: Bash(command)\n\x1b[33mThinking… esc to interrupt\x1b[0m"),
+            Some(AdapterStatusHint::Thinking)
+        );
+    }
+
+    #[test]
+    fn status_detector_prefers_latest_status_hint() {
+        let detector = StatusDetector::for_source(&Source::Claude);
+
+        assert_eq!(
+            detector.detect("Thinking…\nRunning tool: bash"),
+            Some(AdapterStatusHint::Executing)
+        );
     }
 }

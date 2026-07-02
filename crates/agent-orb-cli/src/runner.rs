@@ -271,21 +271,6 @@ fn run_pty_observed_command_blocking(
         "session.started",
     );
 
-    queue_event(
-        &event_tx,
-        build_event(
-            &session_id,
-            source.clone(),
-            workspace.clone(),
-            EventType::StatusHint,
-            json!({
-                "status": "thinking",
-                "reason": "adapter started in observed pty",
-            }),
-        ),
-        "status.hint",
-    );
-
     let reader = master
         .try_clone_reader()
         .map_err(|err| AppError::Terminal(err.to_string()))?;
