@@ -378,16 +378,21 @@ async fn run_tty_passthrough_command(
     session_id: String,
     started_at: OffsetDateTime,
 ) -> Result<i32, AppError> {
-    let mut child = Command::new(&command[0])
+    let mut builder = Command::new(&command[0]);
+    builder
         .args(&command[1..])
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map_err(|source| AppError::Spawn {
-            command: command[0].clone(),
-            source,
-        })?;
+        .stderr(Stdio::inherit());
+    // Hooks spawned by the adapter report against this session.
+    builder.env(crate::hook::SESSION_ENV, &session_id);
+    if let Ok(dir) = env::var("AGENT_ORB_CONFIG_DIR") {
+        builder.env("AGENT_ORB_CONFIG_DIR", dir);
+    }
+    let mut child = builder.spawn().map_err(|source| AppError::Spawn {
+        command: command[0].clone(),
+        source,
+    })?;
 
     let pid = child.id();
     let started_event = build_event(
@@ -479,11 +484,27 @@ fn output_status_scan_enabled(source: &Source) -> bool {
 }
 
 fn should_use_observed_terminal(source: &Source) -> bool {
-    adapter_requires_observed_terminal(source) && !observed_terminal_disabled()
+    adapter_requires_observed_terminal(source) && observed_terminal_enabled()
 }
 
 fn adapter_requires_observed_terminal(source: &Source) -> bool {
     matches!(source, Source::Codex | Source::Claude)
+}
+
+/// PTY observation is now opt-in. Since orb state comes from adapter hooks, the
+/// default path leaves the adapter connected directly to the real terminal so
+/// its full-screen TUI (e.g. Claude's `/` menu) renders without interference.
+/// Set AGENT_ORB_OBSERVE_PTY=1 to re-enable the legacy observed-terminal path.
+fn observed_terminal_enabled() -> bool {
+    if observed_terminal_disabled() {
+        return false;
+    }
+    env::var("AGENT_ORB_OBSERVE_PTY").is_ok_and(|value| {
+        matches!(
+            value.to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
 }
 
 fn observed_terminal_disabled() -> bool {
@@ -826,8 +847,8 @@ fn warn_if_event_failed(result: Result<(), AppError>, event_name: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        adapter_requires_observed_terminal, should_use_tty_passthrough, DetectionTail,
-        DETECTION_TAIL_BYTES,
+        adapter_requires_observed_terminal, should_use_observed_terminal,
+        should_use_tty_passthrough, DetectionTail, DETECTION_TAIL_BYTES,
     };
     use crate::prompt::{AdapterStatusHint, StatusDetector};
     use agent_orb_core::source::Source;
@@ -837,6 +858,15 @@ mod tests {
         assert!(adapter_requires_observed_terminal(&Source::Codex));
         assert!(adapter_requires_observed_terminal(&Source::Claude));
         assert!(!adapter_requires_observed_terminal(&Source::Generic));
+    }
+
+    #[test]
+    fn pty_observation_is_opt_in_so_claude_renders_natively() {
+        // Without AGENT_ORB_OBSERVE_PTY set, adapters must NOT be wrapped in an
+        // observed PTY; state comes from hooks and the TUI renders on the real
+        // terminal. This guards the fix for Claude's `/` menu corruption.
+        assert!(!should_use_observed_terminal(&Source::Claude));
+        assert!(!should_use_observed_terminal(&Source::Codex));
     }
 
     #[test]
