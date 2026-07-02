@@ -41,8 +41,7 @@ build_ui_runtime_if_enabled() {
   fi
 
   echo "==> Building Tauri UI runtime"
-  npm --prefix "$ROOT/apps/agent-orb-ui" run build
-  cargo build --release --manifest-path "$ROOT/apps/agent-orb-ui/src-tauri/Cargo.toml"
+  npm --prefix "$ROOT/apps/agent-orb-ui" run build:tauri-runtime -- --ci
 }
 
 package_windows_x64_if_available() {

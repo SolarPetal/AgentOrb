@@ -65,19 +65,11 @@ jobs:
       - name: Build runtime
         run: cargo build --release --locked --target ${{ matrix.target }} -p agent-orb-cli -p agent-orb-daemon
 
-      - name: Build UI frontend
+      - name: Build UI runtime with Tauri CLI
         shell: bash
-        run: npm ci --prefix apps/agent-orb-ui && npm --prefix apps/agent-orb-ui run build
-
-      - name: Build UI runtime (Unix)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: cargo build --release --locked --manifest-path apps/agent-orb-ui/src-tauri/Cargo.toml
-
-      - name: Build UI runtime (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: cargo build --release --locked --manifest-path apps/agent-orb-ui/src-tauri/Cargo.toml
+        run: |
+          npm ci --prefix apps/agent-orb-ui
+          npm --prefix apps/agent-orb-ui run build:tauri-runtime -- --ci
 
       - name: Package runtime (Unix)
         if: runner.os != 'Windows'

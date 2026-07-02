@@ -106,15 +106,21 @@ function buildRuntime(repoRoot) {
     const uiRoot = path.join(repoRoot, 'apps', 'agent-orb-ui');
     const uiCargo = path.join(uiRoot, 'src-tauri', 'Cargo.toml');
     if (fs.existsSync(uiCargo)) {
-        run('npm', ['--prefix', uiRoot, 'run', 'build'], {
-            cwd: repoRoot,
-            stdio: 'inherit',
-        });
-        run('cargo', ['build', '--release', '--manifest-path', uiCargo], {
+        ensureUiDependencies(uiRoot);
+        run('npm', ['--prefix', uiRoot, 'run', 'build:tauri-runtime', '--', '--ci'], {
             cwd: repoRoot,
             stdio: 'inherit',
         });
     }
+}
+function ensureUiDependencies(uiRoot) {
+    const tauriCli = path.join(uiRoot, 'node_modules', '@tauri-apps', 'cli');
+    if (fs.existsSync(tauriCli))
+        return;
+    const installCommand = fs.existsSync(path.join(uiRoot, 'package-lock.json')) ? 'ci' : 'install';
+    run('npm', ['--prefix', uiRoot, installCommand], {
+        stdio: 'inherit',
+    });
 }
 function installRuntime(repoRoot, platform) {
     console.log('\n==> Installing runtime');

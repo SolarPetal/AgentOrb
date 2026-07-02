@@ -36,7 +36,7 @@ async function main(): Promise<void> {
     case 'version':
     case '--version':
     case '-v':
-      console.log('agent_orb bootstrapper 0.1.8');
+      console.log('agent_orb bootstrapper 0.1.9');
       break;
     case 'help':
     case '--help':
