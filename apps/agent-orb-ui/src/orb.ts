@@ -1,7 +1,14 @@
-import { clearStatus, getConfig, getStatus, setPanelOpen as setNativePanelOpen } from './api';
+import {
+  clearStatus,
+  getConfig,
+  getStatus,
+  setPanelOpen as setNativePanelOpen,
+  startDrag,
+} from './api';
 import type { StatusSnapshot, UiConfig, VisualStatus } from './types';
 
 const POLL_INTERVAL_MS = 1000;
+const DRAG_THRESHOLD_PX = 4;
 const visualClassMap: Record<VisualStatus, string> = {
   disconnected: 'is-disconnected',
   idle: 'is-idle',
@@ -101,6 +108,7 @@ export function mountOrb(root: HTMLElement): void {
   let currentStatus: StatusSnapshot | null = null;
   let currentConfig: UiConfig | null = null;
   let panelOpen = false;
+  let suppressNextClick = false;
 
   const render = (snapshot: StatusSnapshot) => {
     currentStatus = snapshot;
@@ -172,7 +180,45 @@ export function mountOrb(root: HTMLElement): void {
     }
   };
 
-  shell.addEventListener('click', () => {
+  shell.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const pointerId = event.pointerId;
+
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', cleanup);
+      window.removeEventListener('pointercancel', cleanup);
+    };
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
+      if (deltaX * deltaX + deltaY * deltaY < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+
+      suppressNextClick = true;
+      moveEvent.preventDefault();
+      cleanup();
+      void startDrag().catch((error) => {
+        console.warn('failed to drag Agent Orb window', error);
+      });
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', cleanup, { once: true });
+    window.addEventListener('pointercancel', cleanup, { once: true });
+  });
+
+  shell.addEventListener('click', (event) => {
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      event.preventDefault();
+      return;
+    }
     void setPanelOpenState(!panelOpen);
   });
 

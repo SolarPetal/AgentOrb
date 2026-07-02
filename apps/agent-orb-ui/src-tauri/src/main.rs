@@ -130,6 +130,11 @@ fn set_panel_open(window: tauri::WebviewWindow, open: bool) -> Result<(), String
     apply_panel_window_state(&window, open, &config).map_err(|err| err.to_string())
 }
 
+#[tauri::command]
+fn start_drag(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.start_dragging().map_err(|err| err.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -138,6 +143,7 @@ fn main() {
                 let _ = window.set_always_on_top(config.orb.always_on_top);
                 let _ = window.set_ignore_cursor_events(config.orb.click_through);
                 let _ = apply_panel_window_state(&window, false, &config);
+                let _ = position_window_from_config(&window, false, &config);
             }
             Ok(())
         })
@@ -145,7 +151,8 @@ fn main() {
             get_status,
             clear_status,
             get_config,
-            set_panel_open
+            set_panel_open,
+            start_drag
         ])
         .run(tauri::generate_context!())
         .expect("error while running Agent Orb UI");
@@ -171,7 +178,34 @@ fn apply_panel_window_state(
     let height_px = logical_to_physical_u32(height, scale_factor);
 
     window.set_size(tauri::PhysicalSize::new(width_px, height_px))?;
+    let _ = window.set_always_on_top(config.orb.always_on_top);
+    if open {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
 
+    Ok(())
+}
+
+fn position_window_from_config(
+    window: &tauri::WebviewWindow,
+    open: bool,
+    config: &Config,
+) -> tauri::Result<()> {
+    let monitor = window.current_monitor()?.or(window.primary_monitor()?);
+    let scale_factor = monitor
+        .as_ref()
+        .map(|monitor| monitor.scale_factor())
+        .unwrap_or(1.0);
+    let compact_size = f64::from(config.orb.size).max(COMPACT_MIN_SIZE);
+    let (width, height) = if open {
+        (PANEL_WIDTH, PANEL_HEIGHT)
+    } else {
+        (compact_size, compact_size)
+    };
+    let width_px = logical_to_physical_u32(width, scale_factor);
+    let height_px = logical_to_physical_u32(height, scale_factor);
     if let Some(monitor) = monitor {
         let work_area = monitor.work_area();
         let margin = logical_to_physical_i32(PANEL_MARGIN, scale_factor);
@@ -192,13 +226,6 @@ fn apply_panel_window_state(
             x.max(work_area.position.x),
             y.max(work_area.position.y),
         ))?;
-    }
-
-    let _ = window.set_always_on_top(config.orb.always_on_top);
-    if open {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
     }
 
     Ok(())

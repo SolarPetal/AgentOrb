@@ -42,7 +42,7 @@ pub async fn run_wrapped_command(command: Vec<String>) -> Result<i32, AppError> 
 
     if should_use_tty_passthrough(&source) {
         return run_tty_passthrough_command(
-            &command, client, source, workspace, session_id, started_at,
+            &command, config, client, source, workspace, session_id, started_at,
         )
         .await;
     }
@@ -146,6 +146,7 @@ pub async fn run_wrapped_command(command: Vec<String>) -> Result<i32, AppError> 
 
 async fn run_tty_passthrough_command(
     command: &[String],
+    config: Config,
     client: DaemonClient,
     source: Source,
     workspace: String,
@@ -178,7 +179,34 @@ async fn run_tty_passthrough_command(
     );
     warn_if_event_failed(client.post_event(&started_event).await, "session.started");
 
+    let active_event = build_event(
+        &session_id,
+        source.clone(),
+        workspace.clone(),
+        EventType::OutputReceived,
+        json!({
+            "stream": "tty",
+            "bytes": 0,
+            "stdio": "inherit",
+            "synthetic": true,
+        }),
+    );
+    warn_if_event_failed(client.post_event(&active_event).await, "tty.active");
+
+    let (activity_tx, activity_rx) = watch::channel(Instant::now());
+    let timeout_task = tokio::spawn(monitor_timeouts(
+        client.clone(),
+        session_id.clone(),
+        source.clone(),
+        workspace.clone(),
+        config.behavior.silent_threshold_seconds,
+        config.behavior.stuck_threshold_seconds,
+        activity_rx,
+    ));
+
     let status = child.wait().await.map_err(AppError::Io)?;
+    drop(activity_tx);
+    timeout_task.await.map_err(AppError::Join)?;
     let exit_code = status.code().unwrap_or(1);
     let duration_ms = (OffsetDateTime::now_utc() - started_at).whole_milliseconds();
     let exited_event = build_event(

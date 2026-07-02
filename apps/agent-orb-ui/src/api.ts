@@ -27,3 +27,7 @@ export async function getConfig(): Promise<UiConfig> {
 export async function setPanelOpen(open: boolean): Promise<void> {
   await invoke('set_panel_open', { open });
 }
+
+export async function startDrag(): Promise<void> {
+  await invoke('start_drag');
+}

@@ -1,6 +1,6 @@
 {
   "name": "@solar_orb/agent_orb",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Agent Orb local bootstrapper",
   "type": "module",
   "config": {

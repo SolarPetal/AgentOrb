@@ -96,9 +96,10 @@ body {
   background:
     radial-gradient(circle at 50% 52%, rgba(255, 255, 255, 0.1), transparent 57%),
     radial-gradient(circle at 50% 50%, rgba(11, 11, 12, 0.88), rgba(3, 7, 18, 0.24) 64%, transparent 72%);
-  cursor: default;
+  cursor: grab;
   outline: none;
   opacity: var(--orb-opacity);
+  touch-action: none;
   transition:
     opacity 160ms ease,
     transform 160ms ease,
@@ -113,6 +114,7 @@ body {
 
 .orb-shell:active {
   transform: translateY(0) scale(0.98);
+  cursor: grabbing;
 }
 
 .orb-shell:focus-visible {
