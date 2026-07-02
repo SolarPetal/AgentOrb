@@ -123,7 +123,7 @@ function releaseBaseUrl(platform, options) {
     const bundled = bundledReleaseBaseUrl(platform);
     if (bundled)
         return bundled;
-    const version = process.env.AGENT_ORB_VERSION ?? defaultReleaseVersion() ?? 'v0.1.15';
+    const version = process.env.AGENT_ORB_VERSION ?? defaultReleaseVersion() ?? 'v0.1.16';
     const repo = githubRepository();
     if (repo)
         return `https://github.com/${repo}/releases/download/${version}`;

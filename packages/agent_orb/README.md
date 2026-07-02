@@ -37,7 +37,7 @@ If Windows cannot auto-detect Codex CLI, set an explicit path before setup:
 
 ```powershell
 $env:AGENT_ORB_CODEX_PATH = "C:\nvm4w\nodejs\codex.cmd"
-npx --yes @solar_orb/agent_orb@0.1.15 upgrade --yes
+npx --yes @solar_orb/agent_orb@0.1.16 upgrade --yes
 ```
 
 ## Windows local path
@@ -70,5 +70,5 @@ For Windows-host testing, prefer either:
 
 ```powershell
 cd $env:TEMP\agent-orb-npx
-npx --yes .\solar_orb-agent_orb-0.1.15.tgz --help
+npx --yes .\solar_orb-agent_orb-0.1.16.tgz --help
 ```
