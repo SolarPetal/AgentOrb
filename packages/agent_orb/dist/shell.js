@@ -99,6 +99,12 @@ function extraCommandSearchDirs() {
     add(process.env.npm_config_prefix);
     add(process.env.APPDATA ? path.join(process.env.APPDATA, 'npm') : undefined);
     add(process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'nodejs') : undefined);
+    // Common per-user install targets for globally-installed CLIs on Windows.
+    add(process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'codex') : undefined);
+    add(process.env.USERPROFILE ? path.join(process.env.USERPROFILE, '.local', 'bin') : undefined);
+    add(process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'scoop', 'shims') : undefined);
+    add(process.env.ProgramData ? path.join(process.env.ProgramData, 'chocolatey', 'bin') : undefined);
+    add(process.env.ProgramData ? path.join(process.env.ProgramData, 'scoop', 'shims') : undefined);
     add(path.dirname(process.execPath));
     for (const dir of npmPrefixDirs())
         add(dir);
@@ -176,10 +182,14 @@ function findCommandFromShell(command) {
 }
 function npmPrefixDirs() {
     const dirs = [];
+    // On Windows the launcher is `npm.cmd`; spawning bare `npm` fails with ENOENT,
+    // which previously hid every npm-global install location from detection.
+    const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
     try {
-        const result = spawnSync('npm', ['config', 'get', 'prefix'], {
+        const result = spawnSync(npmCommand, ['config', 'get', 'prefix'], {
             encoding: 'utf8',
             windowsHide: true,
+            shell: process.platform === 'win32',
         });
         const prefix = result.status === 0 ? result.stdout.trim() : '';
         if (prefix && !prefix.startsWith('undefined')) {
@@ -189,6 +199,21 @@ function npmPrefixDirs() {
     }
     catch {
         // npm may not be on PATH in source-build scenarios; PATH scanning still runs.
+    }
+    try {
+        const result = spawnSync(npmCommand, ['root', '-g'], {
+            encoding: 'utf8',
+            windowsHide: true,
+            shell: process.platform === 'win32',
+        });
+        const root = result.status === 0 ? result.stdout.trim() : '';
+        // `npm root -g` returns <prefix>/node_modules; global bins live next to it.
+        if (root && !root.startsWith('undefined')) {
+            dirs.push(path.dirname(root));
+        }
+    }
+    catch {
+        // Non-fatal; other search dirs still apply.
     }
     return dirs;
 }

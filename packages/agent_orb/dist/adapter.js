@@ -4,7 +4,7 @@ export const adapters = [
         name: 'codex',
         displayName: 'Codex CLI',
         pathEnvVar: 'AGENT_ORB_CODEX_PATH',
-        binaryCandidates: ['codex'],
+        binaryCandidates: process.platform === 'win32' ? ['codex.cmd', 'codex.exe', 'codex'] : ['codex'],
         wrapperCommand: process.platform === 'win32' ? 'codex-orb.cmd' : 'codex-orb',
         launcherCommand: process.platform === 'win32' ? 'agent_orb-codex.cmd' : 'agent_orb-codex',
         promptPatterns: ['approve', 'permission', 'continue?', 'yes/no'],

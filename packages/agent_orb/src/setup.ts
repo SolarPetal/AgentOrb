@@ -7,7 +7,7 @@ import { detectAdapters, type AdapterProfile } from './adapter.js';
 import { runtimeConfigFromEnv, writeConfig, type RuntimeConfig } from './config.js';
 import { cleanupInstalledRuntime, installRuntimeBundle } from './download.js';
 import { detectPlatform, type PlatformInfo } from './platform.js';
-import { commandExists, getPathEnv, run, setPathEnv } from './shell.js';
+import { commandExists, findCommand, getPathEnv, run, setPathEnv } from './shell.js';
 
 interface SetupOptions {
   yes?: boolean;
@@ -217,22 +217,49 @@ async function selectAdapters(adapters: AdapterProfile[], yes = false): Promise<
   }
 
   const found = adapters.filter((adapter) => adapter.foundBinary);
-  if (found.length === 0) {
-    console.log('No Codex/Claude CLI detected. Manual agent_orb run remains available.');
-    return [];
-  }
+  const missing = adapters.filter((adapter) => !adapter.foundBinary);
+
+  // Non-interactive (piped) install: configure whatever was auto-detected.
   if (!process.stdin.isTTY) {
     return found;
   }
 
+  // Interactive fallback: let the user point at a CLI we could not find on
+  // PATH. This is the safety net for version-manager / non-login-shell PATH
+  // gaps where `codex` runs fine in the user's terminal but not under npx.
   const rl = readline.createInterface({ input, output });
-  const choices = found.map((adapter, index) => `${index + 1}) ${adapter.displayName}`).join('\n');
-  const answer = await rl.question(`\nChoose adapters to configure (comma-separated, Enter = all):\n${choices}\n> `);
-  rl.close();
-  if (!answer.trim()) return found;
+  try {
+    for (const adapter of missing) {
+      const answer = await rl.question(
+        `\n${adapter.displayName} was not detected. Enter its absolute path (Enter = skip):\n> `,
+      );
+      const configured = answer.trim();
+      if (!configured) continue;
 
-  const selectedIndexes = new Set(answer.split(',').map((part) => Number.parseInt(part.trim(), 10) - 1));
-  return found.filter((_, index) => selectedIndexes.has(index));
+      const resolved = findCommand(configured) ?? (fs.existsSync(configured) ? configured : undefined);
+      if (resolved) {
+        adapter.foundBinary = resolved;
+        found.push(adapter);
+        console.log(`  ✓ ${adapter.displayName}: ${resolved}`);
+      } else {
+        console.log(`  ✗ Not an executable path: ${configured} (skipped)`);
+      }
+    }
+
+    if (found.length === 0) {
+      console.log('No Codex/Claude CLI configured. Manual agent_orb run remains available.');
+      return [];
+    }
+
+    const choices = found.map((adapter, index) => `${index + 1}) ${adapter.displayName}`).join('\n');
+    const answer = await rl.question(`\nChoose adapters to configure (comma-separated, Enter = all):\n${choices}\n> `);
+    if (!answer.trim()) return found;
+
+    const selectedIndexes = new Set(answer.split(',').map((part) => Number.parseInt(part.trim(), 10) - 1));
+    return found.filter((_, index) => selectedIndexes.has(index));
+  } finally {
+    rl.close();
+  }
 }
 
 function printDetectedAdapters(adapters: AdapterProfile[]): void {
