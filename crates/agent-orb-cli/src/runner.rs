@@ -36,6 +36,39 @@ use crate::{
 
 type EventQueueSender = mpsc::UnboundedSender<(EventEnvelope, &'static str)>;
 
+/// Number of trailing raw bytes kept for status/prompt detection. Interactive
+/// CLIs repaint the live status line at the bottom of the screen, so detection
+/// must look at the tail of the stream, not the head of each read chunk. A read
+/// can also split the status line across two chunks; retaining a rolling tail
+/// stitches them back together.
+const DETECTION_TAIL_BYTES: usize = 4096;
+
+/// Rolling buffer over the most recent output bytes, used only for prompt and
+/// status detection. Privacy output samples remain head-bounded and separate.
+struct DetectionTail {
+    buffer: Vec<u8>,
+}
+
+impl DetectionTail {
+    fn new() -> Self {
+        Self {
+            buffer: Vec::with_capacity(DETECTION_TAIL_BYTES * 2),
+        }
+    }
+
+    /// Append a chunk and return the current tail decoded for detection. Byte
+    /// boundaries may split a multibyte char; `from_utf8_lossy` degrades those
+    /// to a replacement char, which is harmless for ASCII/whole-word patterns.
+    fn push(&mut self, chunk: &[u8]) -> String {
+        self.buffer.extend_from_slice(chunk);
+        if self.buffer.len() > DETECTION_TAIL_BYTES {
+            let overflow = self.buffer.len() - DETECTION_TAIL_BYTES;
+            self.buffer.drain(..overflow);
+        }
+        String::from_utf8_lossy(&self.buffer).into_owned()
+    }
+}
+
 pub async fn run_wrapped_command(command: Vec<String>) -> Result<i32, AppError> {
     if command.is_empty() {
         return Err(AppError::EmptyCommand);
@@ -453,6 +486,8 @@ where
     W: AsyncWrite + Unpin,
 {
     let mut buffer = vec![0_u8; 8192];
+    let mut detection_tail = DetectionTail::new();
+    let mut last_status: Option<crate::prompt::AdapterStatusHint> = None;
     loop {
         let bytes_read = reader.read(&mut buffer).await.map_err(AppError::Io)?;
         if bytes_read == 0 {
@@ -470,10 +505,10 @@ where
             "stderr" => EventType::StderrReceived,
             _ => EventType::OutputReceived,
         };
-        let observed_sample = truncate_output_sample(&buffer[..bytes_read], max_sample_chars);
-        let prompt = prompt_detector.detect(&observed_sample);
+        let detection_text = detection_tail.push(&buffer[..bytes_read]);
+        let prompt = prompt_detector.detect(&detection_text);
         let event_sample = if include_output_sample {
-            Some(observed_sample.clone())
+            Some(truncate_output_sample(&buffer[..bytes_read], max_sample_chars))
         } else {
             None
         };
@@ -504,18 +539,21 @@ where
             warn_if_event_failed(client.post_event(&event).await, "prompt.detected");
         }
 
-        if let Some(status_hint) = status_detector.detect(&observed_sample) {
-            let event = build_event(
-                &session_id,
-                source.clone(),
-                workspace.clone(),
-                EventType::StatusHint,
-                json!({
-                    "stream": stream_name,
-                    "status": status_hint.as_str(),
-                }),
-            );
-            warn_if_event_failed(client.post_event(&event).await, "status.hint");
+        if let Some(status_hint) = status_detector.detect(&detection_text) {
+            if last_status != Some(status_hint) {
+                last_status = Some(status_hint);
+                let event = build_event(
+                    &session_id,
+                    source.clone(),
+                    workspace.clone(),
+                    EventType::StatusHint,
+                    json!({
+                        "stream": stream_name,
+                        "status": status_hint.as_str(),
+                    }),
+                );
+                warn_if_event_failed(client.post_event(&event).await, "status.hint");
+            }
         }
     }
 
@@ -537,6 +575,8 @@ fn forward_pty_output_blocking(
 ) {
     let mut stdout = std::io::stdout();
     let mut buffer = vec![0_u8; 8192];
+    let mut detection_tail = DetectionTail::new();
+    let mut last_status: Option<crate::prompt::AdapterStatusHint> = None;
 
     loop {
         let bytes_read = match reader.read(&mut buffer) {
@@ -549,11 +589,11 @@ fn forward_pty_output_blocking(
         let _ = stdout.flush();
         let _ = activity_tx.send(Instant::now());
 
-        let observed_sample = truncate_output_sample(&buffer[..bytes_read], max_sample_chars);
-        let prompt = prompt_detector.detect(&observed_sample);
-        let status_hint = status_detector.detect(&observed_sample);
+        let detection_text = detection_tail.push(&buffer[..bytes_read]);
+        let prompt = prompt_detector.detect(&detection_text);
+        let status_hint = status_detector.detect(&detection_text);
         let event_sample = if include_output_sample {
-            Some(observed_sample.clone())
+            Some(truncate_output_sample(&buffer[..bytes_read], max_sample_chars))
         } else {
             None
         };
@@ -592,20 +632,23 @@ fn forward_pty_output_blocking(
         }
 
         if let Some(status_hint) = status_hint {
-            queue_event(
-                &event_tx,
-                build_event(
-                    &session_id,
-                    source.clone(),
-                    workspace.clone(),
-                    EventType::StatusHint,
-                    json!({
-                        "stream": "pty",
-                        "status": status_hint.as_str(),
-                    }),
-                ),
-                "status.hint",
-            );
+            if last_status != Some(status_hint) {
+                last_status = Some(status_hint);
+                queue_event(
+                    &event_tx,
+                    build_event(
+                        &session_id,
+                        source.clone(),
+                        workspace.clone(),
+                        EventType::StatusHint,
+                        json!({
+                            "stream": "pty",
+                            "status": status_hint.as_str(),
+                        }),
+                    ),
+                    "status.hint",
+                );
+            }
         }
     }
 }
@@ -744,7 +787,11 @@ fn warn_if_event_failed(result: Result<(), AppError>, event_name: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{adapter_requires_observed_terminal, should_use_tty_passthrough};
+    use super::{
+        adapter_requires_observed_terminal, should_use_tty_passthrough, DetectionTail,
+        DETECTION_TAIL_BYTES,
+    };
+    use crate::prompt::{AdapterStatusHint, StatusDetector};
     use agent_orb_core::source::Source;
 
     #[test]
@@ -759,5 +806,26 @@ mod tests {
         assert!(should_use_tty_passthrough(&Source::Codex));
         assert!(should_use_tty_passthrough(&Source::Claude));
         assert!(!should_use_tty_passthrough(&Source::Generic));
+    }
+
+    #[test]
+    fn detection_tail_stitches_status_line_split_across_chunks() {
+        let detector = StatusDetector::for_source(&Source::Claude);
+        let mut tail = DetectionTail::new();
+
+        // The stable "esc to interrupt" anchor arrives split across two reads.
+        // Neither half matches any keyword; only the reassembled tail does.
+        assert_eq!(detector.detect(&tail.push(b"> hello there esc to inter")), None);
+        let text = tail.push(b"rupt to stop");
+        assert_eq!(detector.detect(&text), Some(AdapterStatusHint::Thinking));
+    }
+
+    #[test]
+    fn detection_tail_is_bounded_to_recent_bytes() {
+        let mut tail = DetectionTail::new();
+        tail.push(&vec![b'a'; DETECTION_TAIL_BYTES * 2]);
+        let text = tail.push(b"bbb");
+        assert!(text.len() <= DETECTION_TAIL_BYTES);
+        assert!(text.ends_with("bbb"));
     }
 }

@@ -29,110 +29,136 @@ impl StatusDetector {
 
     pub fn detect(&self, text: &str) -> Option<AdapterStatusHint> {
         let normalized = normalize_terminal_text(text);
-        let lower = normalized.as_str();
-        let groups = [
-            (
-                AdapterStatusHint::Compacting,
-                4_u8,
-                &[
-                    "compacting",
-                    "compact",
-                    "auto-compact",
-                    "auto compact",
-                    "condensing",
-                    "compressing context",
-                    "context compression",
-                    "summarizing conversation",
-                    "summarising conversation",
-                    "压缩",
-                    "压缩上下文",
-                    "总结上下文",
-                ][..],
-            ),
-            (
-                AdapterStatusHint::Waiting,
-                3_u8,
-                &[
-                    "approve",
-                    "approval",
-                    "allow",
-                    "deny",
-                    "permission",
-                    "permissions",
-                    "confirm",
-                    "continue?",
-                    "yes/no",
-                    "y/n",
-                    "press enter",
-                    "press return",
-                    "do you want",
-                    "proceed?",
-                    "waiting for input",
-                    "需要确认",
-                    "等待输入",
-                    "是否继续",
-                ][..],
-            ),
-            (
-                AdapterStatusHint::Thinking,
-                2_u8,
-                &[
-                    "thinking",
-                    "reasoning",
-                    "analyzing",
-                    "analysing",
-                    "planning",
-                    "processing",
-                    "pondering",
-                    "working",
-                    "esc to interrupt",
-                    "思考",
-                    "分析",
-                    "计划",
-                    "推理",
-                ][..],
-            ),
-            (
-                AdapterStatusHint::Executing,
-                1_u8,
-                &[
-                    "running tool",
-                    "executing tool",
-                    "using tool",
-                    "tool use",
-                    "tool call",
-                    "running command",
-                    "executing command",
-                    "shell command",
-                    "bash(",
-                    "powershell(",
-                    "cmd.exe",
-                    "apply_patch",
-                    "applying patch",
-                    "editing file",
-                    "writing file",
-                    "reading file",
-                    "searching files",
-                    "fetching url",
-                    "call tool",
-                    "exec command",
-                    "运行工具",
-                    "执行工具",
-                    "执行命令",
-                    "读取文件",
-                    "写入文件",
-                ][..],
-            ),
-        ];
 
-        groups
-            .iter()
-            .filter_map(|(hint, priority, patterns)| {
-                latest_match_index(lower, patterns).map(|index| (index, *priority, *hint))
-            })
-            .max_by_key(|(index, priority, _)| (*index, *priority))
-            .map(|(_, _, hint)| hint)
+        // Interactive CLIs repaint the live status line at the bottom of the
+        // terminal, so the most recent state is on the last non-empty line.
+        // Scan lines from the bottom up and return the first line that carries
+        // any status signal; within a line, group order (highest priority
+        // first) breaks ties. This prevents stale tool output higher up in a
+        // full-screen repaint from pinning the orb to an old state.
+        normalized
+            .lines()
+            .rev()
+            .filter(|line| !line.trim().is_empty())
+            .find_map(detect_status_in_line)
     }
+}
+
+/// Status groups ordered by descending priority. The first group that matches a
+/// line wins, so ordering encodes precedence: compacting > waiting > thinking >
+/// executing.
+fn status_groups() -> [(AdapterStatusHint, &'static [&'static str]); 4] {
+    [
+        (
+            AdapterStatusHint::Compacting,
+            &[
+                "compacting",
+                "compact",
+                "auto-compact",
+                "auto compact",
+                "condensing",
+                "compressing context",
+                "context compression",
+                "summarizing conversation",
+                "summarising conversation",
+                "压缩",
+                "压缩上下文",
+                "总结上下文",
+            ][..],
+        ),
+        (
+            AdapterStatusHint::Waiting,
+            &[
+                "approve",
+                "approval",
+                "allow",
+                "deny",
+                "permission",
+                "permissions",
+                "confirm",
+                "continue?",
+                "yes/no",
+                "y/n",
+                "press enter",
+                "press return",
+                "do you want",
+                "proceed?",
+                "waiting for input",
+                "需要确认",
+                "等待输入",
+                "是否继续",
+            ][..],
+        ),
+        (
+            AdapterStatusHint::Thinking,
+            &[
+                "thinking",
+                "reasoning",
+                "analyzing",
+                "analysing",
+                "planning",
+                "processing",
+                "pondering",
+                "working",
+                "esc to interrupt",
+                // Claude Code renders a randomized gerund next to its spinner;
+                // the stable "esc to interrupt" hint above is the primary anchor,
+                // these cover the common spinner verbs when it is off-screen.
+                "ruminating",
+                "puzzling",
+                "cogitating",
+                "percolating",
+                "noodling",
+                "pondering",
+                "mulling",
+                "brewing",
+                "churning",
+                "synthesizing",
+                "deliberating",
+                "思考",
+                "分析",
+                "计划",
+                "推理",
+            ][..],
+        ),
+        (
+            AdapterStatusHint::Executing,
+            &[
+                "running tool",
+                "executing tool",
+                "using tool",
+                "tool use",
+                "tool call",
+                "running command",
+                "executing command",
+                "shell command",
+                "bash(",
+                "powershell(",
+                "cmd.exe",
+                "apply_patch",
+                "applying patch",
+                "editing file",
+                "writing file",
+                "reading file",
+                "searching files",
+                "fetching url",
+                "call tool",
+                "exec command",
+                "运行工具",
+                "执行工具",
+                "执行命令",
+                "读取文件",
+                "写入文件",
+            ][..],
+        ),
+    ]
+}
+
+fn detect_status_in_line(line: &str) -> Option<AdapterStatusHint> {
+    status_groups()
+        .into_iter()
+        .find(|(_, patterns)| patterns.iter().any(|pattern| line.contains(pattern)))
+        .map(|(hint, _)| hint)
 }
 
 #[derive(Debug, Clone)]
@@ -163,24 +189,21 @@ impl PromptDetector {
     }
 
     pub fn detect(&self, text: &str) -> Option<&'static str> {
-        let lower = normalize_terminal_text(text);
-        self.patterns
-            .iter()
-            .copied()
-            .find(|pattern| lower.contains(pattern))
+        let normalized = normalize_terminal_text(text);
+        // A prompt is a live question at the bottom of the screen. Scan from the
+        // last non-empty line up so a stale prompt higher in a repaint cannot
+        // outrank fresh output that already scrolled past it.
+        normalized
+            .lines()
+            .rev()
+            .filter(|line| !line.trim().is_empty())
+            .find_map(|line| self.patterns.iter().copied().find(|p| line.contains(p)))
     }
 }
 
 pub fn truncate_output_sample(bytes: &[u8], max_sample_chars: usize) -> String {
     let sample = String::from_utf8_lossy(bytes);
     truncate_chars(sample.as_ref(), max_sample_chars)
-}
-
-fn latest_match_index(text: &str, patterns: &[&str]) -> Option<usize> {
-    patterns
-        .iter()
-        .filter_map(|pattern| text.rfind(pattern))
-        .max()
 }
 
 fn normalize_terminal_text(text: &str) -> String {
@@ -294,5 +317,48 @@ mod tests {
             detector.detect("Thinking…\nRunning tool: bash"),
             Some(AdapterStatusHint::Executing)
         );
+    }
+
+    #[test]
+    fn full_screen_repaint_uses_bottom_live_status_line() {
+        let detector = StatusDetector::for_source(&Source::Claude);
+
+        // Realistic Claude repaint: old completed tool output scrolled up top,
+        // the live thinking spinner painted on the bottom line. The old
+        // "latest keyword wins" logic wrongly reported Executing here.
+        let frame = concat!(
+            "\x1b[2J\x1b[H",
+            "> summarize the repo\n",
+            "● Bash(ls -la)\n",
+            "  ⎿  Reading file src/main.rs\n",
+            "\n",
+            "\x1b[33m✻ Ruminating… (12s · esc to interrupt)\x1b[0m",
+        );
+        assert_eq!(detector.detect(frame), Some(AdapterStatusHint::Thinking));
+    }
+
+    #[test]
+    fn random_claude_spinner_verb_is_thinking() {
+        let detector = StatusDetector::for_source(&Source::Claude);
+
+        for verb in ["Puzzling", "Percolating", "Noodling", "Cogitating"] {
+            let line = format!("\x1b[33m✻ {verb}… (esc to interrupt)\x1b[0m");
+            assert_eq!(
+                detector.detect(&line),
+                Some(AdapterStatusHint::Thinking),
+                "spinner verb {verb} should map to Thinking"
+            );
+        }
+    }
+
+    #[test]
+    fn waiting_prompt_at_bottom_beats_earlier_tool_output() {
+        let detector = StatusDetector::for_source(&Source::Claude);
+
+        let frame = concat!(
+            "● Bash(rm -rf build)\n",
+            "  Do you want to proceed? (y/n)",
+        );
+        assert_eq!(detector.detect(frame), Some(AdapterStatusHint::Waiting));
     }
 }
