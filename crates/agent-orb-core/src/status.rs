@@ -10,6 +10,7 @@ pub enum InternalStatus {
     Silent,
     WaitingInput,
     Completed,
+    Compacting,
     Failed,
     Stuck,
     Cancelled,

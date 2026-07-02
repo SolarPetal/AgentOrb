@@ -6,6 +6,7 @@ export type InternalStatus =
   | 'silent'
   | 'waiting_input'
   | 'completed'
+  | 'compacting'
   | 'failed'
   | 'stuck'
   | 'cancelled';
@@ -15,6 +16,9 @@ export type VisualStatus =
   | 'idle'
   | 'starting'
   | 'blue_spinning'
+  | 'yellow_thinking'
+  | 'red_waiting'
+  | 'purple_compacting'
   | 'purple_spinning'
   | 'yellow_pulse'
   | 'green_done'
@@ -52,6 +56,7 @@ export interface UiConfig {
     active: string;
     thinking_like: string;
     waiting_input: string;
+    compacting?: string;
     completed: string;
     error: string;
     warning: string;

@@ -1,6 +1,6 @@
 [install]
 method = "dev"
-version = "0.1.10"
+version = "0.1.11"
 
 [adapters.codex]
 enabled = true
@@ -29,8 +29,9 @@ disconnected = "#6B7280"
 idle = "#9CA3AF"
 starting = "#60A5FA"
 active = "#3B82F6"
-thinking_like = "#F97316"
+thinking_like = "#FACC15"
 waiting_input = "#EF4444"
+compacting = "#A855F7"
 completed = "#22C55E"
 error = "#EF4444"
 warning = "#F97316"

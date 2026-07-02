@@ -11,6 +11,8 @@ path = "src/main.rs"
 [dependencies]
 agent-orb-core.workspace = true
 clap.workspace = true
+crossterm.workspace = true
+portable-pty.workspace = true
 tokio.workspace = true
 serde_json.workspace = true
 time.workspace = true

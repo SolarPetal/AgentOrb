@@ -13,6 +13,8 @@ pub enum EventType {
     StderrReceived,
     #[serde(rename = "prompt.detected")]
     PromptDetected,
+    #[serde(rename = "status.hint")]
+    StatusHint,
     #[serde(rename = "idle.timeout")]
     IdleTimeout,
     #[serde(rename = "stuck.timeout")]

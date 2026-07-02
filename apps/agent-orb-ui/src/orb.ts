@@ -14,6 +14,10 @@ const visualClassMap: Record<VisualStatus, string> = {
   idle: 'is-idle',
   starting: 'is-starting',
   blue_spinning: 'is-active',
+  yellow_thinking: 'is-thinking',
+  red_waiting: 'is-waiting-input',
+  purple_compacting: 'is-compacting',
+  // Backward compatibility with pre-0.1.11 daemon visual names.
   purple_spinning: 'is-silent',
   yellow_pulse: 'is-waiting-input',
   green_done: 'is-completed',
@@ -27,9 +31,10 @@ const statusText: Record<StatusSnapshot['status'], string> = {
   idle: 'Idle',
   starting: 'Starting',
   active: 'Active',
-  silent: 'Silent',
+  silent: 'Thinking',
   waiting_input: 'Waiting',
   completed: 'Done',
+  compacting: 'Compacting',
   failed: 'Failed',
   stuck: 'Stuck',
   cancelled: 'Cancelled',
@@ -148,8 +153,10 @@ export function mountOrb(root: HTMLElement): void {
     root.style.setProperty('--color-idle', config.colors.idle);
     root.style.setProperty('--color-starting', config.colors.starting);
     root.style.setProperty('--color-active', config.colors.active);
+    root.style.setProperty('--color-thinking', config.colors.thinking_like);
     root.style.setProperty('--color-silent', config.colors.thinking_like);
     root.style.setProperty('--color-waiting-input', config.colors.waiting_input);
+    root.style.setProperty('--color-compacting', config.colors.compacting ?? '#A855F7');
     root.style.setProperty('--color-completed', config.colors.completed);
     root.style.setProperty('--color-failed', config.colors.error);
     root.style.setProperty('--color-stuck', config.colors.warning);

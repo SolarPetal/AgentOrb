@@ -44,9 +44,10 @@ pub fn transition(current: InternalStatus, event: &EventEnvelope) -> InternalSta
         SessionCleared => Idle,
         SessionCancelled => Cancelled,
         OutputReceived | StderrReceived => match current {
-            Starting | Active | Silent | WaitingInput => Active,
+            Starting | Active | Silent | WaitingInput | Compacting => Active,
             other => other,
         },
+        StatusHint => status_hint(event).unwrap_or(current),
         IdleTimeout => match current {
             Active | Starting => Silent,
             other => other,
@@ -60,7 +61,7 @@ pub fn transition(current: InternalStatus, event: &EventEnvelope) -> InternalSta
             other => other,
         },
         ProcessExited => match current {
-            Starting | Active | Silent | WaitingInput | Stuck => {
+            Starting | Active | Silent | WaitingInput | Compacting | Stuck => {
                 if process_exit_succeeded(event) {
                     Completed
                 } else {
@@ -69,6 +70,18 @@ pub fn transition(current: InternalStatus, event: &EventEnvelope) -> InternalSta
             }
             other => other,
         },
+    }
+}
+
+fn status_hint(event: &EventEnvelope) -> Option<InternalStatus> {
+    match event.payload.get("status")?.as_str()? {
+        "idle" => Some(InternalStatus::Idle),
+        "thinking" => Some(InternalStatus::Silent),
+        "executing" => Some(InternalStatus::Active),
+        "waiting" => Some(InternalStatus::WaitingInput),
+        "completed" => Some(InternalStatus::Completed),
+        "compacting" => Some(InternalStatus::Compacting),
+        _ => None,
     }
 }
 
@@ -156,6 +169,29 @@ mod tests {
             machine.apply(&event(EventType::OutputReceived)),
             InternalStatus::Active
         );
+    }
+
+    #[test]
+    fn status_hint_maps_adapter_states() {
+        let mut machine = StateMachine::with_status(InternalStatus::Active);
+
+        let hint = EventEnvelope {
+            payload: json!({ "status": "compacting" }),
+            ..event(EventType::StatusHint)
+        };
+        assert_eq!(machine.apply(&hint), InternalStatus::Compacting);
+
+        let hint = EventEnvelope {
+            payload: json!({ "status": "waiting" }),
+            ..event(EventType::StatusHint)
+        };
+        assert_eq!(machine.apply(&hint), InternalStatus::WaitingInput);
+
+        let hint = EventEnvelope {
+            payload: json!({ "status": "thinking" }),
+            ..event(EventType::StatusHint)
+        };
+        assert_eq!(machine.apply(&hint), InternalStatus::Silent);
     }
 
     #[test]

@@ -31,6 +31,7 @@ The first MVP version is implemented for local runtime observation:
 - `agent_orb run -- <command>` wraps arbitrary CLIs.
 - Codex / Claude adapter shims are supported through setup-generated `codex-orb` and `claude-orb` commands.
 - The wrapper emits process, output, prompt, idle, stuck, and exit events.
+- Codex / Claude run in an observed PTY by default, so the orb can distinguish idle gray, thinking yellow, executing blue, waiting red, completed green, and compacting purple.
 - `agent_orbd` stores current local session state behind a bearer token.
 - The Tauri orb polls daemon status and renders configured colors, size, opacity, and animation.
 - The npm bootstrapper installs a portable runtime bundle or falls back to a local source build.
@@ -88,6 +89,14 @@ Agent Orb reads `config.toml` from the platform config directory:
 Useful MVP settings:
 
 ```toml
+[colors]
+idle = "#9CA3AF"          # 待命 / gray
+thinking_like = "#FACC15" # 思考 / yellow
+active = "#3B82F6"        # 执行 / blue
+waiting_input = "#EF4444" # 等待 / red
+completed = "#22C55E"     # 完成 / green
+compacting = "#A855F7"    # 压缩 / purple
+
 [orb]
 position = "top-right"
 size = 48

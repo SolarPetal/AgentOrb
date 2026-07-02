@@ -30,6 +30,11 @@ pub enum AppError {
         command: String,
         source: io::Error,
     },
+    SpawnTerminal {
+        command: String,
+        source: String,
+    },
+    Terminal(String),
     UnsafeDaemonHost(String),
 }
 
@@ -72,6 +77,11 @@ impl fmt::Display for AppError {
             Self::Spawn { command, source } => {
                 write!(f, "failed to spawn target command `{command}`: {source}")
             }
+            Self::SpawnTerminal { command, source } => write!(
+                f,
+                "failed to spawn target command `{command}` in observed terminal: {source}"
+            ),
+            Self::Terminal(err) => write!(f, "terminal observation error: {err}"),
             Self::UnsafeDaemonHost(host) => write!(
                 f,
                 "refusing to send events to non-loopback daemon host `{host}`"

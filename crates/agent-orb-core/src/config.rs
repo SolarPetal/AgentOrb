@@ -56,6 +56,8 @@ pub struct ColorConfig {
     pub thinking_like: String,
     #[serde(default = "defaults::color_waiting_input")]
     pub waiting_input: String,
+    #[serde(default = "defaults::color_compacting")]
+    pub compacting: String,
     #[serde(default = "defaults::color_completed")]
     pub completed: String,
     #[serde(default = "defaults::color_error")]
@@ -136,6 +138,7 @@ impl Default for ColorConfig {
             active: defaults::color_active(),
             thinking_like: defaults::color_thinking_like(),
             waiting_input: defaults::color_waiting_input(),
+            compacting: defaults::color_compacting(),
             completed: defaults::color_completed(),
             error: defaults::color_error(),
             warning: defaults::color_warning(),
@@ -235,11 +238,15 @@ mod defaults {
     }
 
     pub fn color_thinking_like() -> String {
-        "#F97316".to_string()
+        "#FACC15".to_string()
     }
 
     pub fn color_waiting_input() -> String {
         "#EF4444".to_string()
+    }
+
+    pub fn color_compacting() -> String {
+        "#A855F7".to_string()
     }
 
     pub fn color_completed() -> String {
@@ -296,7 +303,9 @@ mod tests {
         assert!(config.orb.always_on_top);
         assert!(!config.orb.click_through);
         assert_eq!(config.colors.active, "#3B82F6");
-        assert_eq!(config.colors.thinking_like, "#F97316");
+        assert_eq!(config.colors.thinking_like, "#FACC15");
+        assert_eq!(config.colors.waiting_input, "#EF4444");
+        assert_eq!(config.colors.compacting, "#A855F7");
         assert_eq!(config.behavior.silent_threshold_seconds, 20);
         assert_eq!(config.behavior.stuck_threshold_seconds, 180);
         assert_eq!(config.behavior.completed_hold_seconds, 10);

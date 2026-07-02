@@ -37,16 +37,24 @@ Or users can override at runtime:
 
 ```bash
 AGENT_ORB_GITHUB_REPOSITORY=OWNER/REPO npx @solar_orb/agent_orb
-AGENT_ORB_VERSION=v0.1.10 npx @solar_orb/agent_orb
+AGENT_ORB_VERSION=v0.1.11 npx @solar_orb/agent_orb
 ```
 
-By default, the bootstrapper downloads the GitHub Release tag matching its own npm package version, for example npm `0.1.10` downloads release `v0.1.10`. If `github_repository` is empty and no override is supplied, setup will fall back to local bundled assets or source build.
+By default, the bootstrapper downloads the GitHub Release tag matching its own npm package version, for example npm `0.1.11` downloads release `v0.1.11`. If `github_repository` is empty and no override is supplied, setup will fall back to local bundled assets or source build.
 
 ## Local smoke
 
 ```bash
 ./scripts/release/smoke-npx-local.sh
 ```
+
+The smoke covers the npm-compatible install/upgrade path and adapter launchers. For status color regressions, also verify an observed adapter session reaches:
+
+- `silent` / `yellow_thinking`
+- `active` / `blue_spinning`
+- `waiting_input` / `red_waiting`
+- `completed` / `green_done`
+- `compacting` / `purple_compacting`
 
 ## Real adapter smoke
 

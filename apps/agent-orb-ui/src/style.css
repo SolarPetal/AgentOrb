@@ -7,8 +7,10 @@
   --color-idle: #9ca3af;
   --color-starting: #60a5fa;
   --color-active: #3b82f6;
-  --color-silent: #f97316;
+  --color-thinking: #facc15;
+  --color-silent: var(--color-thinking);
   --color-waiting-input: #ef4444;
+  --color-compacting: #a855f7;
   --color-completed: #22c55e;
   --color-failed: #ef4444;
   --color-stuck: #f97316;
@@ -415,15 +417,27 @@ body {
   --orb-core: var(--color-starting);
 }
 
-.is-silent {
-  --orb-core: var(--color-silent);
-  --orb-ring: #fed7aa;
-  --orb-glow: rgba(249, 115, 22, 0.76);
-  --orb-halo: rgba(255, 237, 213, 0.92);
-  --orb-halo-soft: rgba(251, 146, 60, 0.34);
+.is-silent,
+.is-thinking {
+  --orb-core: var(--color-thinking);
+  --orb-ring: #fef08a;
+  --orb-glow: rgba(250, 204, 21, 0.76);
+  --orb-halo: rgba(254, 249, 195, 0.92);
+  --orb-halo-soft: rgba(250, 204, 21, 0.34);
   --orb-halo-opacity: 0.66;
   --spin-duration: 2.45s;
   --breath-duration: 2.1s;
+}
+
+.is-compacting {
+  --orb-core: var(--color-compacting);
+  --orb-ring: #e9d5ff;
+  --orb-glow: rgba(168, 85, 247, 0.78);
+  --orb-halo: rgba(243, 232, 255, 0.94);
+  --orb-halo-soft: rgba(192, 132, 252, 0.38);
+  --orb-halo-opacity: 0.72;
+  --spin-duration: 1.95s;
+  --breath-duration: 2.35s;
 }
 
 .is-waiting-input {
