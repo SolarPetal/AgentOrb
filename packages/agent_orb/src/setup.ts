@@ -5,7 +5,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { detectAdapters, type AdapterProfile } from './adapter.js';
 import { runtimeConfigFromEnv, writeConfig, type RuntimeConfig } from './config.js';
-import { cleanupInstalledRuntime, installRuntimeBundle } from './download.js';
+import { cleanupInstalledRuntime, installRuntimeBundle, runtimeSupportsSubcommand } from './download.js';
 import { detectPlatform, type PlatformInfo } from './platform.js';
 import { commandExists, findCommand, getPathEnv, run, setPathEnv } from './shell.js';
 import { claudeHooksInstalled, claudeSettingsPath, installClaudeHooks } from './hooks.js';
@@ -286,6 +286,15 @@ async function configureClaudeHooks(
 
   const agentOrbExe = runtimeExe(platform, 'agent_orb');
   const settingsPath = claudeSettingsPath();
+
+  // Never register hooks the installed binary cannot serve: an older agent_orb
+  // without the `hook` subcommand would exit non-zero and block Claude.
+  if (!runtimeSupportsSubcommand(platform, 'hook')) {
+    console.log('\n==> Claude status hooks');
+    console.log('  · Skipped: installed agent_orb runtime does not support hooks yet.');
+    console.log('  Run `npx @solar_orb/agent_orb upgrade --yes` to update the runtime, then rerun setup.');
+    return;
+  }
 
   console.log('\n==> Claude status hooks');
   console.log('  Agent Orb can add hooks to Claude Code so the orb reflects real');

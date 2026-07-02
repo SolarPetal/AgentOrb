@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseChecksums, verifyChecksum } from './checksum.js';
 import { commandExists, run } from './shell.js';
 export async function installRuntimeBundle(platform, options = {}) {
-    if (!options.force && runtimeLooksInstalled(platform)) {
+    if (!options.force && runtimeMatchesExpectedVersion(platform)) {
         console.log('\n==> Runtime bundle');
         console.log(`✓ existing runtime found at ${platform.runtimeDir}`);
         return true;
@@ -45,6 +45,57 @@ export async function installRuntimeBundle(platform, options = {}) {
 }
 export function runtimeLooksInstalled(platform) {
     return requiredRuntimeFiles(platform).every((file) => fs.existsSync(file));
+}
+/**
+ * True only when the installed agent_orb binary exists AND reports the version
+ * this bootstrapper expects. A stale binary (files present but older version)
+ * returns false so setup/upgrade force a fresh download — otherwise the new
+ * setup could register hooks the old binary cannot serve (e.g. the `hook`
+ * subcommand), which blocks Claude.
+ */
+export function runtimeMatchesExpectedVersion(platform) {
+    if (!runtimeLooksInstalled(platform))
+        return false;
+    const expected = readPackageVersion();
+    if (!expected)
+        return runtimeLooksInstalled(platform);
+    const installed = installedRuntimeVersion(platform);
+    if (!installed)
+        return false;
+    return normalizeVersion(installed) === normalizeVersion(expected);
+}
+export function installedRuntimeVersion(platform) {
+    const exe = path.join(platform.runtimeDir, `agent_orb${platform.exeSuffix}`);
+    if (!fs.existsSync(exe))
+        return undefined;
+    try {
+        const result = run(exe, ['--version'], { allowFailure: true });
+        if (result.status !== 0)
+            return undefined;
+        // clap prints e.g. "agent_orb 0.1.17"; take the last whitespace token.
+        const match = result.stdout.trim().split(/\s+/).pop();
+        return match || undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
+/** Whether the installed binary supports a given subcommand (probe its help). */
+export function runtimeSupportsSubcommand(platform, subcommand) {
+    const exe = path.join(platform.runtimeDir, `agent_orb${platform.exeSuffix}`);
+    if (!fs.existsSync(exe))
+        return false;
+    try {
+        const result = run(exe, ['help'], { allowFailure: true });
+        const text = `${result.stdout}\n${result.stderr}`;
+        return text.includes(subcommand);
+    }
+    catch {
+        return false;
+    }
+}
+function normalizeVersion(value) {
+    return value.trim().replace(/^v/i, '');
 }
 function assertRuntimeInstalled(platform) {
     const missing = requiredRuntimeFiles(platform).filter((file) => !fs.existsSync(file));
@@ -123,7 +174,7 @@ function releaseBaseUrl(platform, options) {
     const bundled = bundledReleaseBaseUrl(platform);
     if (bundled)
         return bundled;
-    const version = process.env.AGENT_ORB_VERSION ?? defaultReleaseVersion() ?? 'v0.1.16';
+    const version = process.env.AGENT_ORB_VERSION ?? defaultReleaseVersion() ?? 'v0.1.17';
     const repo = githubRepository();
     if (repo)
         return `https://github.com/${repo}/releases/download/${version}`;
