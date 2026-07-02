@@ -278,6 +278,8 @@ fn run_pty_observed_command_blocking(
     if let Ok(cwd) = env::current_dir() {
         builder.cwd(cwd.as_os_str());
     }
+    // Let hooks running inside the adapter report against this exact session.
+    inject_session_env(&mut builder, &session_id);
 
     let mut child = slave
         .spawn_command(builder)
@@ -316,6 +318,7 @@ fn run_pty_observed_command_blocking(
         let activity_tx = activity_tx.clone();
         let prompt_detector = PromptDetector::for_source(&source);
         let status_detector = StatusDetector::for_source(&source);
+        let status_scan = output_status_scan_enabled(&source);
         let session_id = session_id.clone();
         let source = source.clone();
         let workspace = workspace.clone();
@@ -327,6 +330,7 @@ fn run_pty_observed_command_blocking(
                 activity_tx,
                 prompt_detector,
                 status_detector,
+                status_scan,
                 session_id,
                 source,
                 workspace,
@@ -449,6 +453,31 @@ fn should_use_tty_passthrough(source: &Source) -> bool {
     matches!(source, Source::Codex | Source::Claude)
 }
 
+/// Inject the Agent Orb session id so hooks spawned by the adapter (e.g. Claude
+/// Code hooks calling `agent_orb hook`) report against this session.
+fn inject_session_env(builder: &mut CommandBuilder, session_id: &str) {
+    builder.env(crate::hook::SESSION_ENV, session_id);
+    if let Ok(dir) = env::var("AGENT_ORB_CONFIG_DIR") {
+        builder.env("AGENT_ORB_CONFIG_DIR", dir);
+    }
+}
+
+/// Whether to derive status from scraping terminal output. For Claude/Codex the
+/// hook integration provides precise, structured state, so output scanning is
+/// off by default and only re-enabled explicitly as a fallback. Non-adapter
+/// generic commands still scan, since they have no hook channel.
+fn output_status_scan_enabled(source: &Source) -> bool {
+    if !matches!(source, Source::Codex | Source::Claude) {
+        return true;
+    }
+    env::var("AGENT_ORB_OUTPUT_STATUS_SCAN").is_ok_and(|value| {
+        matches!(
+            value.to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
+}
+
 fn should_use_observed_terminal(source: &Source) -> bool {
     adapter_requires_observed_terminal(source) && !observed_terminal_disabled()
 }
@@ -567,6 +596,7 @@ fn forward_pty_output_blocking(
     activity_tx: watch::Sender<Instant>,
     prompt_detector: PromptDetector,
     status_detector: StatusDetector,
+    status_scan: bool,
     session_id: String,
     source: Source,
     workspace: String,
@@ -589,9 +619,17 @@ fn forward_pty_output_blocking(
         let _ = stdout.flush();
         let _ = activity_tx.send(Instant::now());
 
-        let detection_text = detection_tail.push(&buffer[..bytes_read]);
-        let prompt = prompt_detector.detect(&detection_text);
-        let status_hint = status_detector.detect(&detection_text);
+        // When status is driven by adapter hooks, scanning terminal repaint text
+        // is skipped entirely: it is the noise source that mis-drove the orb.
+        let (prompt, status_hint) = if status_scan {
+            let detection_text = detection_tail.push(&buffer[..bytes_read]);
+            (
+                prompt_detector.detect(&detection_text),
+                status_detector.detect(&detection_text),
+            )
+        } else {
+            (None, None)
+        };
         let event_sample = if include_output_sample {
             Some(truncate_output_sample(&buffer[..bytes_read], max_sample_chars))
         } else {

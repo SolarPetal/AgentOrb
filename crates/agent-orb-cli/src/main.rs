@@ -2,6 +2,7 @@ mod config;
 mod daemon;
 mod error;
 mod event;
+mod hook;
 mod http;
 mod launcher;
 mod prompt;
@@ -11,7 +12,9 @@ mod source;
 
 use clap::{Parser, Subcommand};
 
-use crate::{error::AppError, launcher::launch_adapter, runner::run_wrapped_command};
+use crate::{
+    error::AppError, hook::run_hook, launcher::launch_adapter, runner::run_wrapped_command,
+};
 
 #[derive(Debug, Parser)]
 #[command(name = "agent_orb", version, about = "Agent Orb CLI wrapper")]
@@ -37,6 +40,16 @@ enum Commands {
         #[arg(last = true)]
         args: Vec<String>,
     },
+    /// Internal: consume a Claude Code hook event on stdin and report status.
+    ///
+    /// Registered in the adapter's settings.json by `npx agent_orb`. Reads the
+    /// hook JSON from stdin, maps it to an orb status, and posts it to the local
+    /// daemon. Always exits 0 so it can never disrupt the host CLI.
+    Hook {
+        /// Adapter name hint, for example `claude`. Defaults to `claude`.
+        #[arg(long)]
+        adapter: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -59,6 +72,7 @@ async fn run_main() -> Result<i32, AppError> {
     match cli.command {
         Some(Commands::Run { command }) => run_wrapped_command(command).await,
         Some(Commands::Launch { adapter, args }) => launch_adapter(adapter, args).await,
+        Some(Commands::Hook { adapter }) => run_hook(adapter).await,
         None => {
             println!(
                 "Agent Orb CLI. Try: agent_orb launch --adapter claude -- or agent_orb run -- echo hello"
