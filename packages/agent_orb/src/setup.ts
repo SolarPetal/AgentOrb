@@ -8,6 +8,7 @@ import { runtimeConfigFromEnv, writeConfig, type RuntimeConfig } from './config.
 import { cleanupInstalledRuntime, installRuntimeBundle } from './download.js';
 import { detectPlatform, type PlatformInfo } from './platform.js';
 import { commandExists, findCommand, getPathEnv, run, setPathEnv } from './shell.js';
+import { claudeHooksInstalled, claudeSettingsPath, installClaudeHooks } from './hooks.js';
 
 interface SetupOptions {
   yes?: boolean;
@@ -54,6 +55,7 @@ export async function setup(options: SetupOptions = {}): Promise<void> {
 
   const configPath = writeConfig(platform.configDir, selectedAdapters, runtime);
   createAdapterShims(platform, selectedAdapters);
+  await configureClaudeHooks(platform, selectedAdapters, options.yes);
   ensurePathConfigured(platform);
 
   if (options.smoke ?? true) {
@@ -96,6 +98,7 @@ export async function doctor(platform = detectPlatform(), runtime = runtimeConfi
   }
   console.log(`${fs.existsSync(path.join(platform.configDir, 'token')) ? '✓' : '·'} token: ${path.join(platform.configDir, 'token')}`);
   console.log(`${await health(runtime) ? '✓' : '·'} daemon: http://${runtime.daemonHost}:${runtime.daemonPort}/health`);
+  console.log(`${claudeHooksInstalled() ? '✓' : '·'} claude hooks: ${claudeSettingsPath()}`);
   printDetectedAdapters(detectAdapters());
 }
 
@@ -271,6 +274,53 @@ function printDetectedAdapters(adapters: AdapterProfile[]): void {
       console.log(`  · ${adapter.displayName}: not found`);
       console.log(`    hint: set ${adapter.pathEnvVar}=<absolute path> if it is installed outside this terminal PATH`);
     }
+  }
+}
+
+async function configureClaudeHooks(
+  platform: PlatformInfo,
+  adapters: AdapterProfile[],
+  yes = false,
+): Promise<void> {
+  if (!adapters.some((adapter) => adapter.name === 'claude')) return;
+
+  const agentOrbExe = runtimeExe(platform, 'agent_orb');
+  const settingsPath = claudeSettingsPath();
+
+  console.log('\n==> Claude status hooks');
+  console.log('  Agent Orb can add hooks to Claude Code so the orb reflects real');
+  console.log('  thinking / tool / waiting / done state instead of guessing from output.');
+  console.log(`  Target: ${settingsPath}`);
+  console.log('  Your current settings.json will be backed up first.');
+
+  if (!(await confirmHookInstall(yes))) {
+    console.log('  · Skipped. Enable later by rerunning setup, or add hooks manually.');
+    return;
+  }
+
+  try {
+    const result = installClaudeHooks(agentOrbExe);
+    if (result.backupPath) {
+      console.log(`  ✓ backed up existing settings to ${result.backupPath}`);
+    }
+    console.log(`  ✓ installed Agent Orb hooks into ${result.settingsPath}`);
+  } catch (error) {
+    console.log(`  ✗ Could not install hooks: ${formatError(error)}`);
+    console.log('  Agent Orb still works; orb state will fall back to output heuristics.');
+  }
+}
+
+async function confirmHookInstall(yes: boolean): Promise<boolean> {
+  if (yes) return true;
+  if (!process.stdin.isTTY) return true;
+
+  const rl = readline.createInterface({ input, output });
+  try {
+    const answer = await rl.question('  Add Claude hooks now? (Y/n): ');
+    const normalized = answer.trim().toLowerCase();
+    return normalized === '' || normalized === 'y' || normalized === 'yes';
+  } finally {
+    rl.close();
   }
 }
 
