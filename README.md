@@ -56,7 +56,7 @@ If Windows setup cannot detect an already installed Codex CLI, pass the absolute
 
 ```powershell
 $env:AGENT_ORB_CODEX_PATH = "C:\nvm4w\nodejs\codex.cmd"
-npx --yes @solar_orb/agent_orb@0.1.14 upgrade --yes
+npx --yes @solar_orb/agent_orb@0.1.15 upgrade --yes
 ```
 
 After setup, open a new terminal and run one command:
