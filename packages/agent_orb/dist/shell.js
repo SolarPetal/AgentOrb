@@ -183,13 +183,14 @@ function findCommandFromShell(command) {
 function npmPrefixDirs() {
     const dirs = [];
     // On Windows the launcher is `npm.cmd`; spawning bare `npm` fails with ENOENT,
-    // which previously hid every npm-global install location from detection.
+    // which previously hid every npm-global install location from detection. Name
+    // the `.cmd` explicitly so Node resolves it via PATHEXT without `shell: true`
+    // (which triggers Node DEP0190 when combined with an args array).
     const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
     try {
         const result = spawnSync(npmCommand, ['config', 'get', 'prefix'], {
             encoding: 'utf8',
             windowsHide: true,
-            shell: process.platform === 'win32',
         });
         const prefix = result.status === 0 ? result.stdout.trim() : '';
         if (prefix && !prefix.startsWith('undefined')) {
@@ -204,7 +205,6 @@ function npmPrefixDirs() {
         const result = spawnSync(npmCommand, ['root', '-g'], {
             encoding: 'utf8',
             windowsHide: true,
-            shell: process.platform === 'win32',
         });
         const root = result.status === 0 ? result.stdout.trim() : '';
         // `npm root -g` returns <prefix>/node_modules; global bins live next to it.
