@@ -51,10 +51,12 @@ Alternative: unauthenticated localhost API. Easier, but unsafe against local cro
 - Full stdout/stderr is not recorded by default; output samples are bounded by `privacy.max_sample_chars` and disabled unless explicitly configured, except short prompt samples needed for prompt detection.
 - Completed status expires after `behavior.completed_hold_seconds`; failed status requires explicit clear.
 - Adapter shims (`codex-orb`, `claude-orb`) call `agent_orb run -- <adapter>` and never replace original CLI binaries.
+- Adapter state is driven by installed CLI hooks rather than terminal scraping. Claude Code hooks report the full six-state set; Codex hooks report executing (`PreToolUse`) and completed (`Stop`), which is enough for a coarse running/done signal. Codex's hooks engine is enabled via `codex features enable hooks`; output scraping (`AGENT_ORB_OBSERVE_PTY=1`) remains an opt-in fallback.
 
 ## Known limitations
 
 - Real Codex CLI / Claude Code CLI behavior still depends on their installed versions and terminal expectations.
+- Codex hooks are experimental, not available on Windows, and must be trusted once via `/hooks` inside Codex before they fire. `PreToolUse` currently intercepts the Bash tool reliably, so text-only turns may skip the executing state and go straight to completed.
 - Prompt detection is heuristic and may produce false positives or miss custom prompts.
 - UI dynamic positioning is applied inside the orb window; native window geometry is still mostly static in MVP.
 - Windows/macOS release assets are produced by CI or platform-specific hosts; local Linux smoke only proves Linux runtime packaging.
@@ -62,3 +64,4 @@ Alternative: unauthenticated localhost API. Easier, but unsafe against local cro
 ## Change history
 
 - 2026-06-30: MVP first-version implementation completed for core, daemon, wrapper, Tauri UI, bootstrapper, config, and local smoke.
+- 2026-07-09: Added Codex CLI hook integration (executing/completed) so Codex orb state no longer depends on the opt-in PTY output scraper.

@@ -31,7 +31,9 @@ The first MVP version is implemented for local runtime observation:
 - `agent_orb run -- <command>` wraps arbitrary CLIs.
 - Codex / Claude adapter shims are supported through setup-generated `codex-orb` and `claude-orb` commands.
 - The wrapper emits process, output, prompt, idle, stuck, and exit events.
-- Codex / Claude run in an observed PTY by default, so the orb can distinguish idle gray, thinking yellow, executing blue, waiting red, completed green, and compacting purple.
+- Claude Code reports precise state (idle, thinking, executing, waiting, completed, compacting) through installed hooks.
+- Codex CLI reports executing and completed state through its own installed hooks; other states fall back to the wrapper's start/exit/timeout signals.
+- Adapters run connected to the real terminal by default so their full-screen TUIs render cleanly. Set `AGENT_ORB_OBSERVE_PTY=1` to re-enable the legacy observed-terminal path that scrapes output for state.
 - `agent_orbd` stores current local session state behind a bearer token.
 - The Tauri orb polls daemon status and renders configured colors, size, opacity, and animation.
 - The npm bootstrapper installs a portable runtime bundle or falls back to a local source build.
@@ -56,7 +58,7 @@ If Windows setup cannot detect an already installed Codex CLI, pass the absolute
 
 ```powershell
 $env:AGENT_ORB_CODEX_PATH = "C:\nvm4w\nodejs\codex.cmd"
-npx --yes @solar_orb/agent_orb@0.1.17 upgrade --yes
+npx --yes @solar_orb/agent_orb@0.1.18 upgrade --yes
 ```
 
 After setup, open a new terminal and run one command:

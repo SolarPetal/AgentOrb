@@ -72,7 +72,7 @@ export function installedRuntimeVersion(platform) {
         const result = run(exe, ['--version'], { allowFailure: true });
         if (result.status !== 0)
             return undefined;
-        // clap prints e.g. "agent_orb 0.1.17"; take the last whitespace token.
+        // clap prints e.g. "agent_orb 0.1.18"; take the last whitespace token.
         const match = result.stdout.trim().split(/\s+/).pop();
         return match || undefined;
     }
@@ -174,7 +174,7 @@ function releaseBaseUrl(platform, options) {
     const bundled = bundledReleaseBaseUrl(platform);
     if (bundled)
         return bundled;
-    const version = process.env.AGENT_ORB_VERSION ?? defaultReleaseVersion() ?? 'v0.1.17';
+    const version = process.env.AGENT_ORB_VERSION ?? defaultReleaseVersion() ?? 'v0.1.18';
     const repo = githubRepository();
     if (repo)
         return `https://github.com/${repo}/releases/download/${version}`;

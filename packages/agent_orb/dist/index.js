@@ -1,4 +1,4 @@
-import { doctor, setup } from './setup.js';
+import { doctor, setup, uninstall } from './setup.js';
 async function main() {
     const args = process.argv.slice(2);
     const command = parseCommand(args);
@@ -21,6 +21,9 @@ async function main() {
         case 'doctor':
             await doctor();
             break;
+        case 'uninstall':
+            await uninstall();
+            break;
         case 'upgrade':
             await setup({
                 yes: flags.has('--yes') || flags.has('-y'),
@@ -34,7 +37,7 @@ async function main() {
         case 'version':
         case '--version':
         case '-v':
-            console.log('agent_orb bootstrapper 0.1.17');
+            console.log('agent_orb bootstrapper 0.1.18');
             break;
         case 'help':
         case '--help':
@@ -76,6 +79,7 @@ Usage:
             [--build-from-source]
   agent_orb doctor
   agent_orb upgrade [--yes] [--no-smoke]
+  agent_orb uninstall
   agent_orb version
 
 Local development:

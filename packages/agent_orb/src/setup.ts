@@ -8,7 +8,14 @@ import { runtimeConfigFromEnv, writeConfig, type RuntimeConfig } from './config.
 import { cleanupInstalledRuntime, installRuntimeBundle, runtimeSupportsSubcommand } from './download.js';
 import { detectPlatform, type PlatformInfo } from './platform.js';
 import { commandExists, findCommand, getPathEnv, run, setPathEnv } from './shell.js';
-import { claudeHooksInstalled, claudeSettingsPath, installClaudeHooks } from './hooks.js';
+import { claudeHooksInstalled, claudeSettingsPath, installClaudeHooks, removeClaudeHooks } from './hooks.js';
+import {
+  codexHooksInstalled,
+  codexHooksPath,
+  enableCodexHooksFeature,
+  installCodexHooks,
+  removeCodexHooks,
+} from './codex-hooks.js';
 
 interface SetupOptions {
   yes?: boolean;
@@ -56,6 +63,7 @@ export async function setup(options: SetupOptions = {}): Promise<void> {
   const configPath = writeConfig(platform.configDir, selectedAdapters, runtime);
   createAdapterShims(platform, selectedAdapters);
   await configureClaudeHooks(platform, selectedAdapters, options.yes);
+  await configureCodexHooks(platform, selectedAdapters, options.yes);
   ensurePathConfigured(platform);
 
   if (options.smoke ?? true) {
@@ -99,7 +107,50 @@ export async function doctor(platform = detectPlatform(), runtime = runtimeConfi
   console.log(`${fs.existsSync(path.join(platform.configDir, 'token')) ? '✓' : '·'} token: ${path.join(platform.configDir, 'token')}`);
   console.log(`${await health(runtime) ? '✓' : '·'} daemon: http://${runtime.daemonHost}:${runtime.daemonPort}/health`);
   console.log(`${claudeHooksInstalled() ? '✓' : '·'} claude hooks: ${claudeSettingsPath()}`);
+  console.log(`${codexHooksInstalled() ? '✓' : '·'} codex hooks: ${codexHooksPath()}`);
   printDetectedAdapters(detectAdapters());
+}
+
+/**
+ * Tear down an Agent Orb install: stop runtime processes, remove installed
+ * runtime files and shims, and strip Agent Orb's own hook entries from the
+ * Claude and Codex configs. Only Agent Orb's hooks are removed; the user's other
+ * hooks and settings are preserved (both remove* helpers back up first).
+ */
+export async function uninstall(platform = detectPlatform()): Promise<void> {
+  printHeader(platform);
+  assertSupported(platform);
+
+  cleanupInstalledRuntime(platform);
+
+  console.log('\n==> Removing adapter hooks');
+  try {
+    const result = removeClaudeHooks();
+    if (result.changed) {
+      if (result.backupPath) console.log(`  ✓ backed up ${result.backupPath}`);
+      console.log(`  ✓ removed Agent Orb hooks from ${result.settingsPath}`);
+    } else {
+      console.log(`  · no Agent Orb hooks found in ${result.settingsPath}`);
+    }
+  } catch (error) {
+    console.log(`  ✗ Could not update Claude hooks: ${formatError(error)}`);
+  }
+
+  try {
+    const result = removeCodexHooks();
+    if (result.changed) {
+      if (result.backupPath) console.log(`  ✓ backed up ${result.backupPath}`);
+      console.log(`  ✓ removed Agent Orb hooks from ${result.hooksPath}`);
+    } else {
+      console.log(`  · no Agent Orb hooks found in ${result.hooksPath}`);
+    }
+  } catch (error) {
+    console.log(`  ✗ Could not update Codex hooks: ${formatError(error)}`);
+  }
+
+  console.log('\n✓ Agent Orb uninstalled');
+  console.log('  Note: config.toml and the token file are left in place; delete the config dir to remove them.');
+  console.log(`  Config dir: ${platform.configDir}`);
 }
 
 function printHeader(platform: PlatformInfo): void {
@@ -317,6 +368,71 @@ async function configureClaudeHooks(
     console.log(`  ✗ Could not install hooks: ${formatError(error)}`);
     console.log('  Agent Orb still works; orb state will fall back to output heuristics.');
   }
+}
+
+async function configureCodexHooks(
+  platform: PlatformInfo,
+  adapters: AdapterProfile[],
+  yes = false,
+): Promise<void> {
+  const codex = adapters.find((adapter) => adapter.name === 'codex');
+  if (!codex) return;
+
+  // Codex's hooks engine is not available on Windows, so there is nothing to
+  // wire there. The orb still gets start/exit/timeout signals from the wrapper.
+  if (platform.platform === 'windows') {
+    console.log('\n==> Codex status hooks');
+    console.log('  · Skipped: Codex hooks are not supported on Windows yet.');
+    return;
+  }
+
+  const agentOrbExe = runtimeExe(platform, 'agent_orb');
+  const hooksPath = codexHooksPath();
+
+  // Never register hooks the installed binary cannot serve: an older agent_orb
+  // without the `hook` subcommand would exit non-zero and could disrupt Codex.
+  if (!runtimeSupportsSubcommand(platform, 'hook')) {
+    console.log('\n==> Codex status hooks');
+    console.log('  · Skipped: installed agent_orb runtime does not support hooks yet.');
+    console.log('  Run `npx @solar_orb/agent_orb upgrade --yes` to update the runtime, then rerun setup.');
+    return;
+  }
+
+  console.log('\n==> Codex status hooks');
+  console.log('  Agent Orb can add hooks to Codex CLI so the orb shows executing');
+  console.log('  and completed state instead of guessing from terminal output.');
+  console.log(`  Target: ${hooksPath}`);
+  console.log('  Your current hooks.json will be backed up first.');
+
+  if (!(await confirmHookInstall(yes))) {
+    console.log('  · Skipped. Enable later by rerunning setup, or add hooks manually.');
+    return;
+  }
+
+  try {
+    const result = installCodexHooks(agentOrbExe);
+    if (result.backupPath) {
+      console.log(`  ✓ backed up existing hooks to ${result.backupPath}`);
+    }
+    console.log(`  ✓ installed Agent Orb hooks into ${result.hooksPath}`);
+  } catch (error) {
+    console.log(`  ✗ Could not install hooks: ${formatError(error)}`);
+    console.log('  Agent Orb still works; Codex orb state falls back to start/exit signals.');
+    return;
+  }
+
+  // Codex silently ignores hooks.json unless the experimental hooks feature is
+  // enabled. Turn it on through the official CLI so we never hand-edit the
+  // user's config.toml (which may hold `[projects.*]` trust tables).
+  const codexExe = codex.foundBinary ?? 'codex';
+  if (enableCodexHooksFeature(codexExe)) {
+    console.log('  ✓ enabled Codex hooks feature (features.hooks = true)');
+  } else {
+    console.log('  · Could not auto-enable the Codex hooks feature.');
+    console.log('    Run this once so hooks fire: codex features enable hooks');
+  }
+
+  console.log('  Note: on first use, run `/hooks` inside Codex and trust the Agent Orb hook.');
 }
 
 async function confirmHookInstall(yes: boolean): Promise<boolean> {
