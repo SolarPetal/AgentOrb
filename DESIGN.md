@@ -45,9 +45,22 @@ The daemon writes a random token in the platform config directory and requires `
 
 Alternative: unauthenticated localhost API. Easier, but unsafe against local cross-process abuse.
 
+### Choice 5: One shared loopback host policy with bounded HTTP calls
+
+Core normalizes `localhost` to `127.0.0.1` and accepts only loopback IP literals. The CLI, daemon, and Tauri bridge use that same policy, and CLI/UI HTTP operations have separate connect and I/O timeouts.
+
+Alternative: let every component resolve arbitrary hostnames. That creates bind/connect inconsistencies and risks sending the local bearer token to a non-loopback host after config tampering.
+
+### Choice 6: Prebuilt matrix before source fallback
+
+Official release assets currently cover Linux x64 and Windows x64. Custom release locations may add other targets; otherwise a missing asset returns control to setup so a source checkout can build locally. Published npm installs without a matching asset now fail with an explicit source-checkout/custom-bundle instruction instead of an HTTP 404.
+
+Alternative: advertise every platform recognized by Node as prebuilt. That hid the actual release matrix and made fallback unreachable when GitHub returned a missing-asset response.
+
 ## Key decisions
 
 - Daemon refuses non-loopback binding for MVP safety.
+- `localhost` is normalized consistently, and daemon HTTP clients fail closed on connection or I/O timeout.
 - Full stdout/stderr is not recorded by default; output samples are bounded by `privacy.max_sample_chars` and disabled unless explicitly configured, except short prompt samples needed for prompt detection.
 - Completed status expires after `behavior.completed_hold_seconds`; failed status requires explicit clear.
 - Adapter shims (`codex-orb`, `claude-orb`) call `agent_orb run -- <adapter>` and never replace original CLI binaries.
@@ -59,9 +72,11 @@ Alternative: unauthenticated localhost API. Easier, but unsafe against local cro
 - Codex hooks are experimental, not available on Windows, and must be trusted once via `/hooks` inside Codex before they fire. `PreToolUse` currently intercepts the Bash tool reliably, so text-only turns may skip the executing state and go straight to completed.
 - Prompt detection is heuristic and may produce false positives or miss custom prompts.
 - UI dynamic positioning is applied inside the orb window; native window geometry is still mostly static in MVP.
-- Windows/macOS release assets are produced by CI or platform-specific hosts; local Linux smoke only proves Linux runtime packaging.
+- Official CI currently publishes only Linux x64 and Windows x64; macOS and arm64 require source builds or externally supplied bundles.
+- Repository smoke tests isolate `CLAUDE_CONFIG_DIR` and `CODEX_HOME`; they must never modify a developer's real adapter hooks or feature configuration.
 
 ## Change history
 
 - 2026-06-30: MVP first-version implementation completed for core, daemon, wrapper, Tauri UI, bootstrapper, config, and local smoke.
 - 2026-07-09: Added Codex CLI hook integration (executing/completed) so Codex orb state no longer depends on the opt-in PTY output scraper.
+- 2026-07-10: Isolated smoke adapter configs, aligned prebuilt bundle fallback with the release matrix, normalized loopback hosts, and bounded CLI/UI daemon HTTP calls.

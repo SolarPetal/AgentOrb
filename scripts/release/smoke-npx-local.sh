@@ -22,6 +22,11 @@ CONFIG_DIR="${AGENT_ORB_SMOKE_CONFIG_DIR:-$(mktemp -d)}"
 SMOKE_PORT="${AGENT_ORB_SMOKE_PORT:-$((23000 + RANDOM % 10000))}"
 FAKE_ADAPTER_DIR="$(mktemp -d)"
 
+# Setup installs adapter hooks. Keep those writes under the disposable smoke
+# root instead of touching the developer's real ~/.claude or ~/.codex files.
+export CLAUDE_CONFIG_DIR="$CONFIG_DIR/claude"
+export CODEX_HOME="$CONFIG_DIR/codex"
+
 cat > "$FAKE_ADAPTER_DIR/codex" <<'SH'
 #!/usr/bin/env sh
 echo fake-codex-ok
@@ -87,6 +92,15 @@ AGENT_ORB_BIN_DIR="$BIN_DIR" \
 AGENT_ORB_CONFIG_DIR="$CONFIG_DIR" \
 AGENT_ORB_DAEMON_PORT="$SMOKE_PORT" \
 npm exec --yes --package "$TARBALL" -- agent_orb upgrade --yes --no-smoke --release-dir "$RELEASE_DIR"
+
+[[ -f "$CLAUDE_CONFIG_DIR/settings.json" ]] || {
+  echo "isolated Claude hooks were not created under $CLAUDE_CONFIG_DIR" >&2
+  exit 1
+}
+[[ -f "$CODEX_HOME/hooks.json" ]] || {
+  echo "isolated Codex hooks were not created under $CODEX_HOME" >&2
+  exit 1
+}
 
 if [[ -n "$CONFIG_DIR" && ! -f "$CONFIG_DIR/token" ]]; then
   echo "token was not created; starting isolated smoke daemon" >&2

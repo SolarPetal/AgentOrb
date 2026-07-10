@@ -8,7 +8,17 @@ Runtime bundles are published as GitHub Release assets:
 - `agent-orb-windows-x64.zip`
 - `checksums.txt`
 
+The official prebuilt matrix is currently:
+
+| Platform | Architecture | Prebuilt bundle |
+| --- | --- | --- |
+| Linux | x64 | yes |
+| Windows | x64 | yes |
+| Linux | arm64 | no; source checkout or custom bundle required |
+| macOS | x64 / arm64 | no; source checkout or custom bundle required |
+
 The npm package `agent_orb` stays lightweight and downloads the matching runtime bundle during setup.
+If a release asset is missing, setup falls back to a local source checkout when one is available. A published npm package intentionally does not contain the Rust/Tauri source tree, so unsupported prebuilt targets must run setup from a clone with `--build-from-source` or provide `--release-dir` / `--release-base-url`.
 
 ## Create a release
 

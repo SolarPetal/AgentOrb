@@ -1,8 +1,9 @@
 use std::{
     env, fs,
-    net::IpAddr,
     path::{Path, PathBuf},
 };
+
+use agent_orb_core::config::loopback_socket_addr;
 
 use crate::error::AppError;
 
@@ -58,13 +59,7 @@ pub fn read_token(config_dir: impl AsRef<Path>) -> Result<String, AppError> {
 }
 
 pub fn ensure_loopback_host(host: &str) -> Result<(), AppError> {
-    let is_loopback = if host.eq_ignore_ascii_case("localhost") {
-        true
-    } else {
-        host.parse::<IpAddr>().is_ok_and(|addr| addr.is_loopback())
-    };
-
-    if is_loopback {
+    if loopback_socket_addr(host, 0).is_some() {
         Ok(())
     } else {
         Err(AppError::UnsafeDaemonHost(host.to_string()))

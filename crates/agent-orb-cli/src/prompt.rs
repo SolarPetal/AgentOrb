@@ -355,10 +355,7 @@ mod tests {
     fn waiting_prompt_at_bottom_beats_earlier_tool_output() {
         let detector = StatusDetector::for_source(&Source::Claude);
 
-        let frame = concat!(
-            "● Bash(rm -rf build)\n",
-            "  Do you want to proceed? (y/n)",
-        );
+        let frame = concat!("● Bash(rm -rf build)\n", "  Do you want to proceed? (y/n)",);
         assert_eq!(detector.detect(frame), Some(AdapterStatusHint::Waiting));
     }
 }

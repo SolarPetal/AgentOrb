@@ -558,7 +558,10 @@ where
         let detection_text = detection_tail.push(&buffer[..bytes_read]);
         let prompt = prompt_detector.detect(&detection_text);
         let event_sample = if include_output_sample {
-            Some(truncate_output_sample(&buffer[..bytes_read], max_sample_chars))
+            Some(truncate_output_sample(
+                &buffer[..bytes_read],
+                max_sample_chars,
+            ))
         } else {
             None
         };
@@ -652,7 +655,10 @@ fn forward_pty_output_blocking(
             (None, None)
         };
         let event_sample = if include_output_sample {
-            Some(truncate_output_sample(&buffer[..bytes_read], max_sample_chars))
+            Some(truncate_output_sample(
+                &buffer[..bytes_read],
+                max_sample_chars,
+            ))
         } else {
             None
         };
@@ -883,7 +889,10 @@ mod tests {
 
         // The stable "esc to interrupt" anchor arrives split across two reads.
         // Neither half matches any keyword; only the reassembled tail does.
-        assert_eq!(detector.detect(&tail.push(b"> hello there esc to inter")), None);
+        assert_eq!(
+            detector.detect(&tail.push(b"> hello there esc to inter")),
+            None
+        );
         let text = tail.push(b"rupt to stop");
         assert_eq!(detector.detect(&text), Some(AdapterStatusHint::Thinking));
     }

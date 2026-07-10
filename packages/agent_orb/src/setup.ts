@@ -90,7 +90,7 @@ export async function setup(options: SetupOptions = {}): Promise<void> {
 function installRuntimeFromSource(platform: PlatformInfo): void {
   console.log('\n==> Building runtime from source');
   ensureBuildTools();
-  const repoRoot = findRepoRoot();
+  const repoRoot = findRepoRoot(platform);
   console.log(`Repository: ${repoRoot}`);
   buildRuntime(repoRoot);
   cleanupInstalledRuntime(platform);
@@ -574,7 +574,7 @@ function runtimeExe(platform: PlatformInfo, name: string): string {
   return path.join(platform.runtimeDir, `${name}${platform.exeSuffix}`);
 }
 
-function findRepoRoot(): string {
+function findRepoRoot(platform: PlatformInfo): string {
   if (process.env.AGENT_ORB_REPO) return process.env.AGENT_ORB_REPO;
 
   let current = process.cwd();
@@ -590,5 +590,8 @@ function findRepoRoot(): string {
   const fromPackage = path.resolve(fileURLToPath(new URL('../../..', import.meta.url)));
   if (fs.existsSync(path.join(fromPackage, 'Cargo.toml'))) return fromPackage;
 
-  throw new Error('Could not find AgentOrb repo root. Set AGENT_ORB_REPO to the repo path.');
+  throw new Error(
+    `No prebuilt runtime bundle is available for ${platform.platform}/${platform.arch}, and the Agent Orb source checkout was not found. ` +
+      'Run setup from a source checkout with --build-from-source, set AGENT_ORB_REPO, or provide a matching --release-dir/--release-base-url.',
+  );
 }

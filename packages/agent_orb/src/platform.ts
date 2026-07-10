@@ -25,6 +25,11 @@ export function detectPlatform(env = process.env): PlatformInfo {
   return { platform, arch, exeSuffix, pathDelimiter, runtimeDir, configDir, bundleName };
 }
 
+/** Runtime bundles currently produced by `.github/workflows/release.yml`. */
+export function hasPrebuiltRuntimeBundle(platform: PlatformName, arch: ArchName): boolean {
+  return arch === 'x64' && (platform === 'linux' || platform === 'windows');
+}
+
 function detectPlatformName(): PlatformName {
   switch (process.platform) {
     case 'win32':

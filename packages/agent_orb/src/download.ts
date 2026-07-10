@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseChecksums, verifyChecksum } from './checksum.js';
-import type { PlatformInfo } from './platform.js';
+import { hasPrebuiltRuntimeBundle, type PlatformInfo } from './platform.js';
 import { commandExists, run } from './shell.js';
 
 export interface BundleInstallOptions {
@@ -11,6 +11,8 @@ export interface BundleInstallOptions {
   releaseBaseUrl?: string;
   releaseDir?: string;
 }
+
+class RuntimeBundleNotFoundError extends Error {}
 
 export async function installRuntimeBundle(platform: PlatformInfo, options: BundleInstallOptions = {}): Promise<boolean> {
   if (!options.force && runtimeMatchesExpectedVersion(platform)) {
@@ -30,8 +32,16 @@ export async function installRuntimeBundle(platform: PlatformInfo, options: Bund
     const bundlePath = path.join(tempDir, platform.bundleName);
     const checksumsPath = path.join(tempDir, 'checksums.txt');
 
-    await downloadFile(joinUrl(baseUrl, platform.bundleName), bundlePath);
-    await downloadFile(joinUrl(baseUrl, 'checksums.txt'), checksumsPath);
+    try {
+      await downloadFile(joinUrl(baseUrl, platform.bundleName), bundlePath);
+      await downloadFile(joinUrl(baseUrl, 'checksums.txt'), checksumsPath);
+    } catch (error) {
+      if (error instanceof RuntimeBundleNotFoundError) {
+        console.log(`· No prebuilt runtime bundle found for ${platform.platform}/${platform.arch}.`);
+        return false;
+      }
+      throw error;
+    }
 
     const checksums = parseChecksums(fs.readFileSync(checksumsPath, 'utf8'));
     const expected = checksums.get(platform.bundleName);
@@ -199,6 +209,10 @@ function releaseBaseUrl(platform: PlatformInfo, options: BundleInstallOptions): 
   const bundled = bundledReleaseBaseUrl(platform);
   if (bundled) return bundled;
 
+  // Keep the default download path aligned with the assets built in release.yml.
+  // Custom release URLs/directories above may still provide additional targets.
+  if (!hasPrebuiltRuntimeBundle(platform.platform, platform.arch)) return undefined;
+
   const version = process.env.AGENT_ORB_VERSION ?? defaultReleaseVersion() ?? 'v0.1.18';
   const repo = githubRepository();
   if (repo) return `https://github.com/${repo}/releases/download/${version}`;
@@ -262,17 +276,31 @@ function bundledReleaseBaseUrl(platform: PlatformInfo): string | undefined {
 async function downloadFile(url: string, dest: string): Promise<void> {
   console.log(`↓ ${url}`);
   if (url.startsWith('file:')) {
-    fs.copyFileSync(fileURLToPath(url), dest);
+    try {
+      fs.copyFileSync(fileURLToPath(url), dest);
+    } catch (error) {
+      if (isMissingFileError(error)) {
+        throw new RuntimeBundleNotFoundError(`Release asset not found: ${url}`);
+      }
+      throw error;
+    }
     return;
   }
 
   const response = await fetch(url);
+  if (response.status === 404 || response.status === 410) {
+    throw new RuntimeBundleNotFoundError(`Release asset not found: ${url}`);
+  }
   if (!response.ok) {
     throw new Error(`Download failed (${response.status} ${response.statusText}): ${url}`);
   }
 
   const bytes = Buffer.from(await response.arrayBuffer());
   fs.writeFileSync(dest, bytes);
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
 
 function writeInstallManifest(

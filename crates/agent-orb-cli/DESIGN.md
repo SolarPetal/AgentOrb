@@ -42,6 +42,10 @@ The wrapper inspects bounded output samples to detect prompts. Privacy config co
 
 Alternative: send all output and detect in daemon. Easier to debug, but violates MVP privacy defaults.
 
+### Shared loopback policy and bounded daemon HTTP
+
+The CLI uses the core loopback resolver, including deterministic `localhost` normalization, before starting or contacting the daemon. Its minimal HTTP client bounds connect operations separately from request/response I/O so a stale or malicious local listener cannot hang adapter startup indefinitely.
+
 ## Known limitations
 
 - Prompt detection is heuristic.

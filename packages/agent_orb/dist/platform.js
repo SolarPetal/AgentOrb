@@ -9,6 +9,10 @@ export function detectPlatform(env = process.env) {
     const bundleName = `agent-orb-${platform}-${arch}${platform === 'windows' ? '.zip' : '.tar.gz'}`;
     return { platform, arch, exeSuffix, pathDelimiter, runtimeDir, configDir, bundleName };
 }
+/** Runtime bundles currently produced by `.github/workflows/release.yml`. */
+export function hasPrebuiltRuntimeBundle(platform, arch) {
+    return arch === 'x64' && (platform === 'linux' || platform === 'windows');
+}
 function detectPlatformName() {
     switch (process.platform) {
         case 'win32':

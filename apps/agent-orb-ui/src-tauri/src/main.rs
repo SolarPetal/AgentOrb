@@ -1,17 +1,19 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{env, fmt, fs, io, path::PathBuf};
+use std::{env, fmt, fs, io, net::IpAddr, path::PathBuf, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
-use agent_orb_core::config::Config;
+use agent_orb_core::config::{loopback_socket_addr, Config};
 
 const TOKEN_FILE_NAME: &str = "token";
 const COMPACT_MIN_SIZE: f64 = 32.0;
 const PANEL_WIDTH: f64 = 360.0;
 const PANEL_HEIGHT: f64 = 260.0;
 const PANEL_MARGIN: f64 = 12.0;
+const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+const HTTP_IO_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct StatusSnapshot {
@@ -78,6 +80,7 @@ struct UiBehaviorConfig {
 async fn get_status() -> Result<StatusSnapshot, String> {
     let config_dir = default_config_dir();
     let config = Config::load_from_dir_or_default(&config_dir);
+    ensure_loopback_host(&config.daemon.host)?;
     let token = read_token(&config_dir).map_err(|err| err.to_string())?;
     let response = http_request(
         &config.daemon.host,
@@ -101,6 +104,7 @@ async fn get_status() -> Result<StatusSnapshot, String> {
 async fn clear_status() -> Result<(), String> {
     let config_dir = default_config_dir();
     let config = Config::load_from_dir_or_default(&config_dir);
+    ensure_loopback_host(&config.daemon.host)?;
     let token = read_token(&config_dir).map_err(|err| err.to_string())?;
     let response = http_request(
         &config.daemon.host,
@@ -254,12 +258,40 @@ async fn http_request(
     headers: &[(&str, String)],
     body: Vec<u8>,
 ) -> Result<HttpResponse, UiError> {
+    http_request_with_timeouts(
+        host,
+        port,
+        method,
+        path,
+        headers,
+        body,
+        HTTP_CONNECT_TIMEOUT,
+        HTTP_IO_TIMEOUT,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn http_request_with_timeouts(
+    host: &str,
+    port: u16,
+    method: &str,
+    path: &str,
+    headers: &[(&str, String)],
+    body: Vec<u8>,
+    connect_timeout: Duration,
+    io_timeout: Duration,
+) -> Result<HttpResponse, UiError> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;
+    use tokio::time::timeout;
 
-    let mut stream = TcpStream::connect((host, port)).await?;
+    let mut stream = timeout(connect_timeout, TcpStream::connect((host, port)))
+        .await
+        .map_err(|_| UiError::HttpTimeout("connect"))??;
+    let host_header = http_host_header(host, port);
     let mut request = format!(
-        "{method} {path} HTTP/1.1\r\nHost: {host}:{port}\r\nContent-Length: {}\r\nConnection: close\r\n",
+        "{method} {path} HTTP/1.1\r\nHost: {host_header}\r\nContent-Length: {}\r\nConnection: close\r\n",
         body.len()
     );
     for (name, value) in headers {
@@ -270,15 +302,39 @@ async fn http_request(
     }
     request.push_str("\r\n");
 
-    stream.write_all(request.as_bytes()).await?;
+    timeout(io_timeout, stream.write_all(request.as_bytes()))
+        .await
+        .map_err(|_| UiError::HttpTimeout("write"))??;
     if !body.is_empty() {
-        stream.write_all(&body).await?;
+        timeout(io_timeout, stream.write_all(&body))
+            .await
+            .map_err(|_| UiError::HttpTimeout("write"))??;
     }
-    stream.flush().await?;
+    timeout(io_timeout, stream.flush())
+        .await
+        .map_err(|_| UiError::HttpTimeout("write"))??;
 
     let mut raw = Vec::new();
-    stream.read_to_end(&mut raw).await?;
+    timeout(io_timeout, stream.read_to_end(&mut raw))
+        .await
+        .map_err(|_| UiError::HttpTimeout("read"))??;
     parse_http_response(&raw)
+}
+
+fn http_host_header(host: &str, port: u16) -> String {
+    if matches!(host.parse::<IpAddr>(), Ok(IpAddr::V6(_))) {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
+fn ensure_loopback_host(host: &str) -> Result<(), String> {
+    if loopback_socket_addr(host, 0).is_some() {
+        Ok(())
+    } else {
+        Err(UiError::UnsafeDaemonHost(host.to_string()).to_string())
+    }
 }
 
 fn parse_http_response(raw: &[u8]) -> Result<HttpResponse, UiError> {
@@ -388,19 +444,28 @@ fn default_config_dir() -> PathBuf {
 #[derive(Debug)]
 enum UiError {
     EmptyToken,
+    HttpTimeout(&'static str),
     InvalidHttpResponse,
     Io(io::Error),
     ReadToken { path: PathBuf, source: io::Error },
+    UnsafeDaemonHost(String),
 }
 
 impl fmt::Display for UiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyToken => write!(f, "local daemon token file is empty"),
+            Self::HttpTimeout(operation) => write!(f, "daemon HTTP {operation} timed out"),
             Self::InvalidHttpResponse => write!(f, "daemon returned an invalid HTTP response"),
             Self::Io(err) => write!(f, "I/O error: {err}"),
             Self::ReadToken { path, source } => {
                 write!(f, "failed to read token at {}: {source}", path.display())
+            }
+            Self::UnsafeDaemonHost(host) => {
+                write!(
+                    f,
+                    "refusing to send the daemon token to non-loopback host `{host}`"
+                )
             }
         }
     }
@@ -417,6 +482,7 @@ impl From<io::Error> for UiError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::net::TcpListener;
 
     #[test]
     fn parses_http_response_body() {
@@ -430,5 +496,48 @@ mod tests {
     #[test]
     fn rejects_invalid_http_response() {
         assert!(parse_http_response(b"not-http").is_err());
+    }
+
+    #[test]
+    fn brackets_ipv6_host_header() {
+        assert_eq!(http_host_header("::1", 17321), "[::1]:17321");
+        assert_eq!(http_host_header("localhost", 17321), "localhost:17321");
+    }
+
+    #[test]
+    fn accepts_localhost_and_rejects_external_daemon_hosts() {
+        assert!(ensure_loopback_host("localhost").is_ok());
+        assert!(ensure_loopback_host("127.0.0.1").is_ok());
+        assert!(ensure_loopback_host("example.com").is_err());
+    }
+
+    #[tokio::test]
+    async fn times_out_when_daemon_never_responds() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("test listener should bind");
+        let port = listener
+            .local_addr()
+            .expect("test listener should have an address")
+            .port();
+        let server = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.expect("connection should arrive");
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        });
+
+        let result = http_request_with_timeouts(
+            "127.0.0.1",
+            port,
+            "GET",
+            "/health",
+            &[],
+            Vec::new(),
+            Duration::from_millis(50),
+            Duration::from_millis(50),
+        )
+        .await;
+
+        assert!(matches!(result, Err(UiError::HttpTimeout("read"))));
+        server.abort();
     }
 }

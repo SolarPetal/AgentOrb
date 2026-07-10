@@ -2,9 +2,7 @@ mod api;
 mod security;
 mod session_store;
 
-use std::net::SocketAddr;
-
-use agent_orb_core::config::Config;
+use agent_orb_core::config::{loopback_socket_addr, Config};
 
 #[tokio::main]
 async fn main() {
@@ -18,13 +16,8 @@ async fn main() {
         config.behavior.completed_hold_seconds,
     ));
 
-    let addr: SocketAddr = format!("{}:{}", config.daemon.host, config.daemon.port)
-        .parse()
-        .expect("daemon host and port should form a valid socket address");
-    assert!(
-        addr.ip().is_loopback(),
-        "agent_orbd refuses to bind non-loopback address for MVP safety"
-    );
+    let addr = loopback_socket_addr(&config.daemon.host, config.daemon.port)
+        .expect("agent_orbd refuses to bind a non-loopback daemon host");
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .expect("bind agent_orbd to configured local address");

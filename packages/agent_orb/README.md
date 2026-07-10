@@ -16,6 +16,8 @@ From the repo root:
 ./scripts/release/smoke-npx-local.sh
 ```
 
+The smoke uses disposable `CLAUDE_CONFIG_DIR` and `CODEX_HOME` directories, so hook installation and Codex feature changes do not touch the developer's real adapter configuration.
+
 For manual testing:
 
 ```bash
@@ -24,6 +26,8 @@ npx --yes ./packages/agent_orb setup --yes
 ```
 
 If `packages/agent_orb/releases` contains a matching native bundle, setup installs that bundle directly with SHA256 verification. Otherwise it falls back to source build. On Windows, setup also adds the runtime bin directory to the user PATH so a new terminal can run `agent_orb-codex`, `agent_orb-claude`, `agent_orb`, `codex-orb`, and `claude-orb` directly. The adapter launchers call `agent_orb launch`, which starts the orb UI and daemon only for that CLI session. When the adapter CLI exits, the session-local `agent_orbd` and `agent-orb-ui` processes are stopped so the desktop orb does not linger.
+
+Official prebuilt bundles currently cover Linux x64 and Windows x64. Other targets require a source checkout (`--build-from-source`) or a custom matching bundle. Missing release assets are treated as a fallback signal; checksum failures and other download errors still fail closed.
 
 Upgrade or repair an existing install:
 

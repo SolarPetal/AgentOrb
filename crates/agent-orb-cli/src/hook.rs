@@ -147,7 +147,10 @@ mod tests {
 
     #[test]
     fn tool_failure_and_batch_return_to_thinking() {
-        assert_eq!(status_for_hook_event("PostToolUseFailure"), Some("thinking"));
+        assert_eq!(
+            status_for_hook_event("PostToolUseFailure"),
+            Some("thinking")
+        );
         assert_eq!(status_for_hook_event("PostToolBatch"), Some("thinking"));
     }
 }

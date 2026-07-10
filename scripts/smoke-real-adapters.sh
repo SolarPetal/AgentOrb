@@ -23,6 +23,11 @@ RELEASE_DIR="${AGENT_ORB_REAL_SMOKE_RELEASE_DIR:-$ROOT/dist/release-real-smoke}"
 SMOKE_PORT="${AGENT_ORB_REAL_SMOKE_PORT:-$((34000 + RANDOM % 10000))}"
 HOST="127.0.0.1"
 
+# `agent_orb setup --yes` installs hooks and enables Codex's hooks feature.
+# Isolate both adapter configuration roots alongside the temporary orb config.
+export CLAUDE_CONFIG_DIR="$CONFIG_DIR/claude"
+export CODEX_HOME="$CONFIG_DIR/codex"
+
 cleanup() {
   if [[ "${AGENT_ORB_REAL_SMOKE_KEEP:-0}" == "1" ]]; then
     echo "Keeping smoke config: $CONFIG_DIR"
@@ -86,15 +91,23 @@ AGENT_ORB_SKIP_UI_BUILD="${AGENT_ORB_SKIP_UI_BUILD:-1}" \
   "$ROOT/scripts/release/package-runtime.sh" "$RELEASE_DIR"
 
 log "Pack npm tarball"
-(cd "$ROOT/packages/agent_orb" && npm pack --pack-destination "$PACK_DIR") >/tmp/agent-orb-real-adapter-pack.out
+(cd "$ROOT/packages/agent_orb" && npm pack --pack-destination "$PACK_DIR") \
+  >/tmp/agent-orb-real-adapter-pack.out
 cat /tmp/agent-orb-real-adapter-pack.out
-TARBALL="$PACK_DIR/agent_orb-0.1.0.tgz"
+TARBALL="$PACK_DIR/$(tail -n 1 /tmp/agent-orb-real-adapter-pack.out)"
 
 log "Install isolated Agent Orb runtime"
 AGENT_ORB_BIN_DIR="$BIN_DIR" \
 AGENT_ORB_CONFIG_DIR="$CONFIG_DIR" \
 AGENT_ORB_DAEMON_PORT="$SMOKE_PORT" \
 npm exec --yes --package "$TARBALL" -- agent_orb setup --yes --no-smoke --release-dir "$RELEASE_DIR"
+
+for adapter in "${detected_adapters[@]}"; do
+  case "$adapter" in
+    claude) test -f "$CLAUDE_CONFIG_DIR/settings.json" ;;
+    codex) test -f "$CODEX_HOME/hooks.json" ;;
+  esac
+done
 
 read_token() {
   tr -d '\r\n' < "$CONFIG_DIR/token"

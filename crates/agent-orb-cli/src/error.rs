@@ -18,6 +18,7 @@ pub enum AppError {
     EmptyCommand,
     EmptyToken,
     HttpStatus(u16),
+    HttpTimeout(&'static str),
     InvalidHttpResponse,
     Io(io::Error),
     Json(serde_json::Error),
@@ -65,6 +66,9 @@ impl fmt::Display for AppError {
             Self::EmptyCommand => write!(f, "missing command after `agent_orb run --`"),
             Self::EmptyToken => write!(f, "local daemon token file is empty"),
             Self::HttpStatus(status) => write!(f, "daemon returned HTTP status {status}"),
+            Self::HttpTimeout(operation) => {
+                write!(f, "daemon HTTP {operation} timed out")
+            }
             Self::InvalidHttpResponse => write!(f, "daemon returned an invalid HTTP response"),
             Self::Io(err) => write!(f, "I/O error: {err}"),
             Self::Json(err) => write!(f, "JSON error: {err}"),

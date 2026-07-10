@@ -18,6 +18,8 @@ The UI frontend calls Rust commands, and the Rust side reads the token file and 
 
 Alternative: direct browser fetch. That would expose token handling to frontend code and is less aligned with desktop-local security boundaries.
 
+The Rust bridge validates the daemon host against the shared loopback policy before reading/sending the bearer token, and applies bounded connect and I/O timeouts. This keeps a tampered `config.toml` from redirecting the token to a remote host or hanging the orb indefinitely.
+
 ### CSS variables from config
 
 The frontend maps `config.toml` colors and dimensions into CSS variables.

@@ -1,8 +1,27 @@
-use std::{fmt, fs, path::Path};
+use std::{
+    fmt, fs,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::Path,
+};
 
 use serde::{Deserialize, Serialize};
 
 pub const CONFIG_FILE_NAME: &str = "config.toml";
+
+/// Resolve a daemon host accepted by Agent Orb to a concrete loopback address.
+///
+/// `localhost` is normalized to IPv4 so every component binds and connects to
+/// the same address instead of depending on platform-specific DNS ordering.
+pub fn loopback_socket_addr(host: &str, port: u16) -> Option<SocketAddr> {
+    if host.eq_ignore_ascii_case("localhost") {
+        return Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port));
+    }
+
+    host.parse::<IpAddr>()
+        .ok()
+        .filter(IpAddr::is_loopback)
+        .map(|ip| SocketAddr::new(ip, port))
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
@@ -367,5 +386,20 @@ mod tests {
         assert_eq!(config.colors.active, "#0000FF");
         assert_eq!(config.colors.error, "#FF0000");
         assert_eq!(config.colors.idle, "#9CA3AF");
+    }
+
+    #[test]
+    fn resolves_only_loopback_daemon_hosts() {
+        assert_eq!(
+            loopback_socket_addr("localhost", 17321),
+            Some(SocketAddr::from(([127, 0, 0, 1], 17321)))
+        );
+        assert_eq!(
+            loopback_socket_addr("127.0.0.2", 17321),
+            Some(SocketAddr::from(([127, 0, 0, 2], 17321)))
+        );
+        assert!(loopback_socket_addr("::1", 17321).is_some());
+        assert!(loopback_socket_addr("0.0.0.0", 17321).is_none());
+        assert!(loopback_socket_addr("example.com", 17321).is_none());
     }
 }
